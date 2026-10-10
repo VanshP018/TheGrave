@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Phase 1 models only. Problem/Match/Submission/RatingHistory are added in later phases (see PLAN.md).
+
+model User {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  // Glicko-2 rating state (see decision.md D-010)
+  rating       Float    @default(1500)
+  ratingDev    Float    @default(350)
+  volatility   Float    @default(0.06)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SHA-256 of the opaque token; the raw token only ever lives in the httpOnly cookie
+  tokenHash  String    @unique
+  // All tokens produced by rotating one login share a family; reuse of a revoked token kills the family
+  familyId   String    @db.Uuid
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+}
