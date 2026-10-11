@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5173,
     // Same-origin in dev so the refresh-token cookie can be SameSite=Strict.
     proxy: {
-      '/api': { target: 'http://localhost:4000', rewrite: (p) => p.replace(/^\/api/, '') },
+      '/api': { target: 'http://localhost:4000' },
       '/socket.io': { target: 'http://localhost:4000', ws: true },
     },
   },
