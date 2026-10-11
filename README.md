@@ -11,4 +11,5 @@ cp apps/server/.env.example apps/server/.env   # then set real JWT secrets
 pnpm --filter @thegrave/shared build
 pnpm --filter @thegrave/server db:migrate
 pnpm dev                                       # api :4000, web :5173
+pnpm test                                      # integration tests (needs infra:up; uses thegrave_test DB)
 ```

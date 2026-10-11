@@ -21,6 +21,20 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 - Removed unrequested files that `prisma init` generated (see D-016).
 - **Verified:** `pnpm typecheck` and `pnpm lint` are green, `pnpm --filter @thegrave/web build` succeeds, and `GET /health` returns `{"status":"ok","postgres":true,"redis":true}`.
 
+### 2026-11-18 — Phase 1: Authentication
+
+- Shared: `PublicUser`, `AuthResponse` and `ApiError` types. Email is trimmed and lower-cased in the zod schema before validation, so `ALICE@x.io` and `alice@x.io` are the same account.
+- Server `src/lib/tokens.ts`: HS256 access JWT (`sub`, `username`, `iss=thegrave`; verification pins the algorithm and issuer), plus an opaque 256-bit refresh token stored as HMAC-SHA256 (D-018).
+- Server `src/modules/auth`: `POST /api/auth/register|login|refresh|logout` and `GET /api/me`. Passwords use argon2id. Unknown emails are verified against a dummy hash, so login timing doesn't reveal which accounts exist. Every error is the generic "Invalid email or password".
+- Refresh rotation is a conditional `updateMany … WHERE revokedAt IS NULL` inside a transaction. Two concurrent refreshes can't both win; the loser is treated as reuse (D-019). Presenting a revoked token revokes the whole family. Other login sessions of the same user are unaffected.
+- `authenticate` Fastify plugin (`onRequest: app.authenticate`) sets `req.auth`. `verifyAccessToken` is exported for the Socket.IO handshake in Phase 3.
+- Global error handler: `ZodError` → 400 with field `issues`, `AuthError` → 401/409, 5xx bodies are masked and logged.
+- Rate limits (Redis-backed, per IP): register 5/min, login 5/min, refresh 30/min, everything else 200/min.
+- All client routes moved under `/api`, and the Vite proxy rewrite was removed (D-017).
+- Web: in-memory Zustand auth store, an `api()` fetch wrapper (401 → refresh once → retry), silent refresh on boot serialised across tabs with the Web Locks API (D-020), login/register pages with field errors, `ProtectedRoute`/`GuestRoute`, and a home page that calls `/api/me`.
+- Tests: Vitest integration suite (`apps/server/test/auth.test.ts`, 15 tests) against real Postgres (`thegrave_test` DB, created and migrated by `globalSetup`) and Redis DB 1 (D-021). It covers register, duplicates/validation, login and generic errors, the login rate limit, rotation, reuse detection and family revocation, session isolation, expired/unknown tokens, the concurrent-refresh race, logout, and forged/`alg=none`/expired JWTs.
+- **Verified:** `pnpm test` (15/15), `pnpm typecheck`, `pnpm lint` and the web build are green. Ran a manual curl pass through the Vite proxy (register → cookie `Path=/api/auth` → refresh → `/me` → logout → refresh returns 401). The UI has not been clicked through in a real browser yet.
+
 ---
 
 ## Decisions
@@ -110,3 +124,36 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 - **Context:** Prisma 7's `init` wrote `.agents/`, `.claude/`, `.windsurf/` skill folders and `skills-lock.json` into `apps/server`.
 - **Decision:** Deleted them, along with the generated `apps/server/.gitignore` (the root `.gitignore` covers it).
 - **Why:** Nobody requested them, they are third-party instructions for AI tools, and they clutter the repo.
+
+### D-017 — API routes live under `/api` on the server (no proxy rewrite) · Accepted
+- **Context:** The Vite proxy stripped `/api` before forwarding. A refresh cookie scoped with `Path=/auth` by the server would then never be sent by the browser, which requests `/api/auth/refresh`.
+- **Decision:** The server registers client-facing routes with `prefix: '/api'`, and the proxies forward paths unchanged. `/health` stays at the root for infrastructure probes.
+- **Alternatives:** Cookie `Path=/` would leak the refresh token onto every request. A configurable cookie path per environment invites mismatches.
+- **Consequences:** Dev and prod see identical paths. The prod reverse proxy must forward `/api/*` as-is (Phase 7).
+
+### D-018 — Refresh tokens hashed with HMAC-SHA256 (keyed by `JWT_REFRESH_SECRET`) · Accepted
+- **Context:** The plan says "SHA-256 hash". The token is 256 bits of randomness, so a plain hash is already safe from brute force. `JWT_REFRESH_SECRET` existed in the config but had no use, because refresh tokens are opaque rather than JWTs.
+- **Decision:** Store `HMAC-SHA256(secret, token)`.
+- **Why:** It costs nothing and gives defence in depth: a DB dump alone can't confirm a candidate token without the secret. It also gives the existing secret a real purpose.
+- **Consequences:** Rotating `JWT_REFRESH_SECRET` invalidates every refresh token, which forces everyone to log in again. That is acceptable, and also a handy kill switch.
+
+### D-019 — Strict rotation: a concurrent refresh with the same token counts as reuse · Accepted
+- **Decision:** Rotation succeeds only if the conditional revoke updates exactly one row. If two requests race with the same token, one wins and the other revokes the family.
+- **Alternatives:** A grace window that accepts the previous token for N seconds tolerates races, but it weakens theft detection and makes the server stateful about "recently rotated".
+- **Consequences:** The client must never send overlapping refreshes, which is solved by D-020. A tested invariant: after a race, at most one live token remains.
+
+### D-020 — Client serialises refreshes with in-tab dedupe + Web Locks · Accepted
+- **Context:** The access token is in memory, so every tab silently refreshes on load. Two tabs opening at once would present the same cookie and, under D-019, log the user out.
+- **Decision:** `refreshSession()` dedupes calls within a tab (one shared promise) and wraps the request in `navigator.locks.request('thegrave-refresh')`. A waiting tab sends the cookie the first tab just rotated, so both tabs end up authenticated.
+- **Alternatives:** `BroadcastChannel` to share the access token across tabs is more code and doesn't stop the race on its own. Storing the token in localStorage contradicts D-007.
+- **Consequences:** Web Locks needs a secure context (HTTPS, or `localhost` in dev). It is supported in all evergreen browsers.
+
+### D-021 — Integration tests use a dedicated database and Redis DB · Accepted
+- **Decision:** Vitest `globalSetup` creates `thegrave_test` if it's missing and runs `prisma migrate deploy`. Tests use Redis DB index 1. Each test truncates the tables and runs `FLUSHDB`, which also resets rate-limit counters. Test files run serially (`fileParallelism: false`).
+- **Why:** These are real-database tests, as the plan requires, and they can't clobber dev data. CI can reuse the setup with service containers (Phase 7).
+- **Consequences:** Tests need `pnpm infra:up` first. If suites slow down later, move to a schema per worker.
+
+### D-022 — Refresh cookie `Secure` everywhere except `NODE_ENV=development` · Accepted
+- **Context:** Chrome and Firefox treat `http://localhost` as secure, but Safari has historically dropped `Secure` cookies on plain-HTTP localhost.
+- **Decision:** `secure: NODE_ENV !== 'development'`. Test and production always set `Secure`, and a test asserts it.
+- **Consequences:** Dev is the only environment without `Secure`. It still has `httpOnly` + `SameSite=Strict` + `Path=/api/auth`.

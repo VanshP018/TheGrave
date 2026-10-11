@@ -43,7 +43,7 @@ Every non-trivial choice made along the way gets an entry in [`decision.md`](./d
 
 ---
 
-## Phase 1 — Authentication
+## Phase 1 — Authentication ✅ (done 2026-11-18)
 
 - `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /me`
 - argon2id password hashing; generic "invalid credentials" errors (no user enumeration)
@@ -52,7 +52,9 @@ Every non-trivial choice made along the way gets an entry in [`decision.md`](./d
 - `authenticate` Fastify hook; strict rate limits on auth routes (e.g. 5/min/IP on login)
 - Frontend: login/register pages, auth store, silent refresh on boot + on 401, protected routes
 
-**Exit:** integration tests (Vitest + real Postgres) for register/login/refresh rotation/reuse detection/logout.
+**Exit:** integration tests (Vitest + real Postgres) for register/login/refresh rotation/reuse detection/logout. ✔ (15 tests, `pnpm test`)
+
+_Note: all client routes are served under `/api` (D-017), e.g. `POST /api/auth/login`._
 
 ---
 
