@@ -12,6 +12,12 @@ const envSchema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(7),
   EXECUTOR: z.enum(['docker']).default('docker'),
+  JUDGE_IMAGE: z.string().default('thegrave-judge:latest'),
+  // Optional OCI runtime for judge containers, e.g. `runsc` (gVisor) on dedicated judge hosts.
+  JUDGE_RUNTIME: z.string().optional(),
+  JUDGE_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  // Backpressure: reject new submissions with 503 once this many are waiting.
+  JUDGE_QUEUE_MAX: z.coerce.number().int().positive().default(500),
 });
 
 export const config = envSchema.parse(process.env);
