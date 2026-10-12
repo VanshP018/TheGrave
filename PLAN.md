@@ -58,7 +58,7 @@ _Note: all client routes are served under `/api` (D-017), e.g. `POST /api/auth/l
 
 ---
 
-## Phase 2 — Problems & Code Execution (highest risk — start with a spike)
+## Phase 2 — Problems & Code Execution ✅ (done 2026-11-18)
 
 - Models: `Problem` (slug, title, difficulty, statement markdown, time/memory limits, starter code per language), `TestCase` (input, expected, `isSample`)
 - Seed ~30 problems across Easy/Medium/Hard with hidden tests
@@ -70,7 +70,9 @@ _Note: all client routes are served under `/api` (D-017), e.g. `POST /api/auth/l
 - Verdicts: `ACCEPTED | WRONG_ANSWER | TLE | MLE | RUNTIME_ERROR | COMPILE_ERROR`
 - "Run" (sample tests only) vs "Submit" (all hidden tests)
 
-**Exit:** fuzz/abuse tests: fork bomb, infinite loop, memory hog, network access, writing to FS — all contained and reported correctly.
+**Exit:** fuzz/abuse tests: fork bomb, infinite loop, memory hog, network access, writing to FS — all contained and reported correctly. ✔ (`test/executor.test.ts`; plus all 30 problems cross-validated by independent Python references, `test/problems.test.ts`)
+
+_Spike result: Python p95 672 ms per container (target < 1.5 s). Single judge image for Python + C++ (D-023); limits and verdict rules in D-026–D-028._
 
 ---
 
@@ -135,10 +137,10 @@ Lobby (queue, live player count), battle screen (statement | Monaco | test resul
 
 ## Risks
 
-| Risk | Mitigation |
-|---|---|
+| Risk                          | Mitigation                                                                                               |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Sandbox escape from user code | Isolated judge hosts, no network, non-root, resource caps, gVisor in prod, no Docker socket on API nodes |
-| Judge latency under load | Queue with backpressure, horizontal workers, sample-only "Run" |
-| Timer drift / disputes | Server is the only authority on time and verdicts |
-| Double matching across nodes | Redis lock + atomic Lua pairing |
-| Cheating (copying solutions) | Out of scope for v1; log submissions for later similarity checks |
+| Judge latency under load      | Queue with backpressure, horizontal workers, sample-only "Run"                                           |
+| Timer drift / disputes        | Server is the only authority on time and verdicts                                                        |
+| Double matching across nodes  | Redis lock + atomic Lua pairing                                                                          |
+| Cheating (copying solutions)  | Out of scope for v1; log submissions for later similarity checks                                         |

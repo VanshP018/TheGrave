@@ -10,6 +10,9 @@ pnpm infra:up                                  # Postgres :5442, Redis :6389
 cp apps/server/.env.example apps/server/.env   # then set real JWT secrets
 pnpm --filter @thegrave/shared build
 pnpm --filter @thegrave/server db:migrate
-pnpm dev                                       # api :4000, web :5173
+pnpm --filter @thegrave/server db:generate     # Prisma 7: migrate no longer generates the client
+pnpm --filter @thegrave/server db:seed         # 30 problems with hidden tests
+pnpm --filter @thegrave/server judge:build     # sandbox image for the code judge
+pnpm dev                                       # api :4000, judge worker, web :5173
 pnpm test                                      # integration tests (needs infra:up; uses thegrave_test DB)
 ```

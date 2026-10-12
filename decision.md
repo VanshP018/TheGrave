@@ -35,45 +35,90 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 - Tests: Vitest integration suite (`apps/server/test/auth.test.ts`, 15 tests) against real Postgres (`thegrave_test` DB, created and migrated by `globalSetup`) and Redis DB 1 (D-021). It covers register, duplicates/validation, login and generic errors, the login rate limit, rotation, reuse detection and family revocation, session isolation, expired/unknown tokens, the concurrent-refresh race, logout, and forged/`alg=none`/expired JWTs.
 - **Verified:** `pnpm test` (15/15), `pnpm typecheck`, `pnpm lint` and the web build are green. Ran a manual curl pass through the Vite proxy (register → cookie `Path=/api/auth` → refresh → `/me` → logout → refresh returns 401). The UI has not been clicked through in a real browser yet.
 
+### 2026-11-18 — Phase 2: Problems & Code Execution
+
+- **Spike first, as planned.** Built one judge image (`apps/server/judge/`: Alpine 3.22, Python 3.12, g++ 14.2, `runner.py`) and timed whole-container runs with every sandbox flag on. Each run was 3 tests and 12 runs per language:
+
+  | Language                                    | p50    | p95    |
+  | ------------------------------------------- | ------ | ------ |
+  | Python                                      | 359 ms | 672 ms |
+  | C++ (`<iostream>`)                          | 452 ms | 549 ms |
+  | C++ (`<bits/stdc++.h>`, precompiled header) | 409 ms | 2.7 s  |
+
+  The `<bits/stdc++.h>` p95 is a single cold-start outlier. Python beats the < 1.5 s p95 target, so D-008 moves to Accepted.
+
+- Prisma: new `Problem`, `TestCase` and `Submission` models, plus enums `Difficulty`, `Language`, `Verdict`, `SubmissionKind` (RUN/SUBMIT) and `SubmissionStatus` (QUEUED/RUNNING/DONE/FAILED). Migration `problems_and_submissions`.
+- Shared: `LANGUAGES`, `VERDICTS`, `codeSubmissionSchema` (code limited to 64 KB), and the `ProblemDetail`/`SubmissionView`/`TestResultView` contracts.
+- `Executor` interface (`src/judge/executor.ts`) and `DockerExecutor`. Containers run with `--network none --read-only --tmpfs /tmp:size=64m --memory <limit+64m> --memory-swap = memory --cpus 1 --pids-limit 64 --user 65534 --cap-drop ALL --no-new-privileges --ulimit nofile=64`. `JUDGE_RUNTIME` is optional, e.g. `runsc`. A host-side deadline runs `docker kill`.
+- The runner is PID 1. Each test runs under a wall-clock limit, `RLIMIT_CPU` as a backstop and `RLIMIT_FSIZE` for output. The OOM count from cgroup v2 `memory.events` detects MLE. After every test the runner kills and reaps every other process, which catches forks that escaped their process group with `setsid`.
+- Output comparison ignores trailing whitespace per line, CRLF and trailing blank lines, and nothing else.
+- Queue and worker: a BullMQ `submissions` queue with `jobId = submissionId` (idempotent) and 3 attempts with exponential backoff. `src/worker.ts` is a separate entrypoint with concurrency `JUDGE_CONCURRENCY` (default 2). Once retries are exhausted the submission becomes `FAILED`.
+- API, all signed-in only:
+  - `GET /api/problems`
+  - `GET /api/problems/:slug` (samples only, per-language time limits, starter code)
+  - `POST /api/problems/:slug/run` (samples) and `POST /api/problems/:slug/submit` (all tests): both return 202 and the submission id
+  - `GET /api/submissions/:id`: owner only, 404 for anyone else
+
+  Run/submit are rate limited to 10/min **per user**. The API returns 503 + `Retry-After` when the waiting queue reaches `JUDGE_QUEUE_MAX`.
+
+- Seed: 30 problems (10 Easy, 12 Medium, 8 Hard) and 223 test cases, generated deterministically (D-031). `pnpm --filter @thegrave/server db:seed` is idempotent.
+- Scripts: `dev` runs `dev:api` and `dev:worker` together. Added `judge:build`, `db:seed` and `start:worker`. Test `globalSetup` builds the judge image.
+- Bugs found along the way:
+  - Two of my own test cases were wrong. `1e9 + 1e9` doesn't overflow a 32-bit int, and a DNS lookup with no network ends in TLE because musl retries; it is still contained.
+  - Prisma 7's `migrate dev` no longer regenerates the client, so `db:generate` must run after migrations.
+  - My first Python reference for balanced brackets was O(n²) and would have hit TLE on the 50k-deep hidden test.
+- **Verified:** `pnpm test` passes 73/73: 15 auth, 16 executor/abuse, 32 problem set, 10 judge API.
+  - Abuse tests (the exit criterion): fork bomb, detached forks, infinite loop (Python and C++), sleeping, memory hogs (Python list, bytearray, C++ vector), TCP and DNS network access, writes to `/`, `/etc`, the runner and `/usr/bin`, filling `/tmp`, uid and capabilities, `kill -9` on PID 1, output flood, and reading expected outputs. Every one is contained and gets the right verdict, and later tests and containers still work.
+  - All 30 independent Python references are ACCEPTED, with a max of 565 ms against the 3 s Python limit.
+  - Ran `pnpm dev` and submitted a real C++ solution over HTTP: `ACCEPTED 9/9`. No judge containers were left behind. Typecheck and lint are green.
+- Not done in this phase: a frontend for practice or the editor (Monaco UI is Phase 6), and pushing results over sockets (Phase 3/4; for now the client polls).
+
 ---
 
 ## Decisions
 
 ### D-001 — pnpm workspaces monorepo · Accepted
+
 - **Context:** The server and client share types (API payloads, socket events, validation).
 - **Decision:** One repo using pnpm workspaces, with `packages/shared` consumed as `workspace:*`.
 - **Alternatives:** Separate repos would mean duplicated types and drift. Turborepo/Nx add caching, but nothing needs it at three packages. Add Turborepo if builds get slow.
 - **Consequences:** `shared` must be built (`tsc`) before the server or web typecheck, and its dev script runs `tsc --watch`.
 
 ### D-002 — TypeScript everywhere, pinned to 6.0.x · Accepted
+
 - **Context:** npm `latest` for TypeScript is 7.0.2, the native Go compiler. `typescript-eslint` 8.73 declares `typescript >=4.8.4 <6.1.0`.
 - **Decision:** Pin `typescript@~6.0.3` in every package, including web, whose Vite template defaulted to 7. Use strict mode plus `noUncheckedIndexedAccess`.
 - **Consequences:** Move to TS 7 once typescript-eslint supports it. That should be a free speed-up.
 
 ### D-003 — Fastify 5 for the HTTP API · Accepted
+
 - **Context:** The API needs to be fast, typed and production-grade, with a plugin system for auth, rate limiting and so on.
 - **Decision:** Fastify 5.
 - **Alternatives:** Express is slower, and its async error handling and typings are weaker. NestJS brings heavy DI/decorator ceremony that this team size doesn't need. Hono is great, but its Node/WebSocket ecosystem is thinner.
 - **Consequences:** Built-in pino logging, a schema-friendly design, and first-party plugins (cookie, cors, helmet, rate-limit).
 
 ### D-004 — Socket.IO (+ Redis adapter) for realtime · Accepted
+
 - **Context:** Battles need rooms, reconnection, acks and fan-out across several server replicas.
 - **Decision:** Socket.IO 4 with `@socket.io/redis-adapter`.
 - **Alternatives:** Raw `ws`/uWebSockets is faster, but rooms, reconnection, acks and multi-node broadcast would all be hand-built. SSE is one-way only.
 - **Consequences:** Clients must use the Socket.IO client. Force the `websocket` transport in prod so no sticky sessions are needed.
 
 ### D-005 — PostgreSQL 17 + Prisma 7.10.1 (pg driver adapter) · Accepted
+
 - **Context:** Data is relational (users ↔ matches ↔ submissions ↔ rating history), and rating updates need transactions.
 - **Decision:** Postgres 17 and Prisma 7. Prisma is **pinned to 7.10.1** because npm `latest` currently points to `8.0.0-rc.34`, a release candidate. Prisma 7 needs a driver adapter, so it uses `@prisma/adapter-pg`. The client is generated into `apps/server/src/generated/prisma` (gitignored).
 - **Alternatives:** Drizzle is lighter and closer to SQL, but Prisma's migrations and DX are more mature. MongoDB is a poor fit for relational data that needs transactional rating updates.
 - **Consequences:** Run `pnpm db:generate` after schema changes and in CI. Write raw SQL where Prisma is weak, such as leaderboard window queries.
 
 ### D-006 — Redis 8 for ephemeral/fast state · Accepted
+
 - **Decision:** One Redis serves the matchmaking queue (ZSET by rating), live leaderboard (ZSET), rate-limit counters, distributed locks, Socket.IO pub/sub and BullMQ.
 - **Why:** Sorted sets map directly to "find players near rating X" and "top N by rating". Lua scripts give atomic pairing.
 - **Consequences:** Everything in Redis must be **rebuildable from Postgres** (the leaderboard is rebuilt on boot). AOF is enabled. Split Redis instances by role later if load requires.
 
 ### D-007 — Auth: short-lived access JWT + rotating refresh cookie · Accepted
+
 - **Context:** The requirement is JWT auth, and it must also authenticate WebSocket handshakes.
 - **Decision:**
   - Access token: HS256 JWT, **15 min**, returned in the response body and held **in memory** on the client (not localStorage, so XSS can't read it from storage). It is sent as `Authorization: Bearer` and in the Socket.IO `auth` payload.
@@ -82,78 +127,161 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 - **Alternatives:** Long-lived JWTs alone can't be revoked. Server sessions only would be simpler, but the user specifically asked for JWT. A JWT refresh token gains nothing over an opaque one and leaks claims.
 - **Consequences:** Logout and revocation take effect within 15 minutes for access tokens. Use separate secrets for access and refresh. Move to RS256/EdDSA if other services need to verify tokens.
 
-### D-008 — Code execution: own Docker sandbox behind an `Executor` interface · Revisit in Phase 2
+### D-008 — Code execution: own Docker sandbox behind an `Executor` interface · Accepted (spike passed in Phase 2)
+
 - **Context:** Running untrusted code is the biggest security and operational risk. Docker on this machine uses **cgroup v2**.
 - **Decision:** Build a judge worker that runs each submission in a throwaway container (`--network none --read-only --memory --cpus --pids-limit`, non-root, wall-clock timeout), fed by a BullMQ queue. Hide it behind an `Executor` interface so the backend can be swapped.
 - **Alternatives:**
-  - *Judge0 (self-hosted):* feature-rich, but its `isolate` sandbox expects cgroup v1 and is painful on Docker Desktop/cgroup v2 hosts. Still a candidate for a dedicated Linux judge host.
-  - *Hosted APIs (Judge0 RapidAPI, Piston public):* per-call cost, rate limits, added latency, and user code sent to a third party.
-  - *In-process VMs (vm2, isolated-vm):* JS only and historically escapable.
-- **Consequences:** The worker needs Docker access, which is effectively root. It **must not** run on API nodes in production. Use dedicated judge hosts, ideally with the gVisor `runsc` runtime. Phase 2 starts with a spike to measure container cold-start latency (target < 1.5 s p95 for Python).
+  - _Judge0 (self-hosted):_ feature-rich, but its `isolate` sandbox expects cgroup v1 and is painful on Docker Desktop/cgroup v2 hosts. Still a candidate for a dedicated Linux judge host.
+  - _Hosted APIs (Judge0 RapidAPI, Piston public):_ per-call cost, rate limits, added latency, and user code sent to a third party.
+  - _In-process VMs (vm2, isolated-vm):_ JS only and historically escapable.
+- **Consequences:** The worker needs Docker access, which is effectively root. It **must not** run on API nodes in production. Use dedicated judge hosts, ideally with the gVisor `runsc` runtime. Phase 2 starts with a spike to measure container cold-start latency (target < 1.5 s p95 for Python). **Result:** Python p95 was 672 ms for a whole 3-test container run (see the Phase 2 work log).
 
 ### D-009 — Server is authoritative for time and verdicts · Accepted
+
 - **Decision:** Match `startsAt/endsAt` live in the DB. Expiry fires from a BullMQ delayed job, not an in-memory `setTimeout`, so it survives restarts and works across replicas. Clients only display a countdown corrected by server time offset. Only the judge decides verdicts.
 - **Why:** This prevents client clock manipulation and keeps outcomes consistent when a node dies mid-match.
 
 ### D-010 — Glicko-2 rating instead of Elo · Accepted
+
 - **Context:** A rating system for 1v1 results.
 - **Decision:** Glicko-2 (rating 1500, RD 350, volatility 0.06 at start). The fields are already on `User`.
 - **Why:** Glicko-2 tracks uncertainty (RD). New players move fast and veterans stay stable, and inactive players' RD grows. Elo uses one K-factor for everyone, which is unfair to newcomers and slow to converge.
 - **Consequences:** The math is more complex, so it will get unit tests against Glickman's worked example. Matchmaking can use RD to widen windows for uncertain players.
 
 ### D-011 — Frontend: React 19 + Vite SPA · Accepted
+
 - **Decision:** React 19, Vite 8, Tailwind 4, Monaco (`@monaco-editor/react`), TanStack Query (server state), Zustand (client and realtime state), react-router.
 - **Alternatives:** Next.js offers SSR and SEO, but the app is almost entirely authenticated and realtime, so SSR adds complexity (server components vs. sockets, an extra runtime) for little gain.
 - **Consequences:** Static build served by nginx/CDN. A public leaderboard SEO page could be added later if wanted.
 
 ### D-012 — Same-origin deployment (proxy) · Accepted
+
 - **Decision:** In dev, the Vite proxy forwards `/api` and `/socket.io` to `:4000`. In prod, a reverse proxy serves the web and API under one origin.
 - **Why:** It lets the refresh cookie use `SameSite=Strict`, which largely neutralises CSRF on `/auth/refresh`, and it avoids CORS preflights.
 
 ### D-013 — Non-default local ports (5442 / 6389) · Accepted
+
 - **Context:** Other projects' containers on this machine (`debate_redis` on 6379, others on 5434/5435/6380) already use the default ports.
 - **Decision:** Map this project's Postgres to host port **5442** and Redis to **6389**, with compose project name `thegrave`. The existing containers were not touched.
 
 ### D-014 — zod for all validation, shared between client and server · Accepted
+
 - **Why:** One schema provides runtime validation on the server, form validation on the client, and inferred TS types. Env vars are also validated with zod at boot, so the server fails fast on bad config.
 
 ### D-015 — UUIDv7 primary keys · Accepted
+
 - **Why:** IDs are not enumerable like auto-increment, and unlike UUIDv4 they are time-ordered, so B-tree indexes stay compact and IDs sort by creation.
 
 ### D-016 — Removed AI-editor skill files injected by `prisma init` · Accepted
+
 - **Context:** Prisma 7's `init` wrote `.agents/`, `.claude/`, `.windsurf/` skill folders and `skills-lock.json` into `apps/server`.
 - **Decision:** Deleted them, along with the generated `apps/server/.gitignore` (the root `.gitignore` covers it).
 - **Why:** Nobody requested them, they are third-party instructions for AI tools, and they clutter the repo.
 
 ### D-017 — API routes live under `/api` on the server (no proxy rewrite) · Accepted
+
 - **Context:** The Vite proxy stripped `/api` before forwarding. A refresh cookie scoped with `Path=/auth` by the server would then never be sent by the browser, which requests `/api/auth/refresh`.
 - **Decision:** The server registers client-facing routes with `prefix: '/api'`, and the proxies forward paths unchanged. `/health` stays at the root for infrastructure probes.
 - **Alternatives:** Cookie `Path=/` would leak the refresh token onto every request. A configurable cookie path per environment invites mismatches.
 - **Consequences:** Dev and prod see identical paths. The prod reverse proxy must forward `/api/*` as-is (Phase 7).
 
 ### D-018 — Refresh tokens hashed with HMAC-SHA256 (keyed by `JWT_REFRESH_SECRET`) · Accepted
+
 - **Context:** The plan says "SHA-256 hash". The token is 256 bits of randomness, so a plain hash is already safe from brute force. `JWT_REFRESH_SECRET` existed in the config but had no use, because refresh tokens are opaque rather than JWTs.
 - **Decision:** Store `HMAC-SHA256(secret, token)`.
 - **Why:** It costs nothing and gives defence in depth: a DB dump alone can't confirm a candidate token without the secret. It also gives the existing secret a real purpose.
 - **Consequences:** Rotating `JWT_REFRESH_SECRET` invalidates every refresh token, which forces everyone to log in again. That is acceptable, and also a handy kill switch.
 
 ### D-019 — Strict rotation: a concurrent refresh with the same token counts as reuse · Accepted
+
 - **Decision:** Rotation succeeds only if the conditional revoke updates exactly one row. If two requests race with the same token, one wins and the other revokes the family.
 - **Alternatives:** A grace window that accepts the previous token for N seconds tolerates races, but it weakens theft detection and makes the server stateful about "recently rotated".
 - **Consequences:** The client must never send overlapping refreshes, which is solved by D-020. A tested invariant: after a race, at most one live token remains.
 
 ### D-020 — Client serialises refreshes with in-tab dedupe + Web Locks · Accepted
+
 - **Context:** The access token is in memory, so every tab silently refreshes on load. Two tabs opening at once would present the same cookie and, under D-019, log the user out.
 - **Decision:** `refreshSession()` dedupes calls within a tab (one shared promise) and wraps the request in `navigator.locks.request('thegrave-refresh')`. A waiting tab sends the cookie the first tab just rotated, so both tabs end up authenticated.
 - **Alternatives:** `BroadcastChannel` to share the access token across tabs is more code and doesn't stop the race on its own. Storing the token in localStorage contradicts D-007.
 - **Consequences:** Web Locks needs a secure context (HTTPS, or `localhost` in dev). It is supported in all evergreen browsers.
 
 ### D-021 — Integration tests use a dedicated database and Redis DB · Accepted
+
 - **Decision:** Vitest `globalSetup` creates `thegrave_test` if it's missing and runs `prisma migrate deploy`. Tests use Redis DB index 1. Each test truncates the tables and runs `FLUSHDB`, which also resets rate-limit counters. Test files run serially (`fileParallelism: false`).
 - **Why:** These are real-database tests, as the plan requires, and they can't clobber dev data. CI can reuse the setup with service containers (Phase 7).
 - **Consequences:** Tests need `pnpm infra:up` first. If suites slow down later, move to a schema per worker.
 
 ### D-022 — Refresh cookie `Secure` everywhere except `NODE_ENV=development` · Accepted
+
 - **Context:** Chrome and Firefox treat `http://localhost` as secure, but Safari has historically dropped `Secure` cookies on plain-HTTP localhost.
 - **Decision:** `secure: NODE_ENV !== 'development'`. Test and production always set `Secure`, and a test asserts it.
 - **Consequences:** Dev is the only environment without `Secure`. It still has `httpOnly` + `SameSite=Strict` + `Path=/api/auth`.
+
+### D-023 — One judge image for all languages, with a Python runner as PID 1 · Accepted
+
+- **Context:** The plan suggested one image per language. Every image needs the same runner logic: limits, verdict classification and process cleanup.
+- **Decision:** One image, `thegrave-judge` (Alpine + Python 3 + g++). `runner.py` is the entrypoint and therefore PID 1. A precompiled `<bits/stdc++.h>` uses the judge's exact flags (`-std=c++17 -O2 -pipe`).
+- **Why:** There is one runner implementation to harden. As PID 1, orphaned and `setsid`-escaped processes are reparented to the runner, so it can kill and reap all of them between tests. The kernel also ignores `kill -9 1` from inside the namespace, which a test confirms.
+- **Alternatives:** Per-language images (smaller each, but the runner is duplicated, or C++ images also need Python). A C runner (faster startup, much more code). `isolate` (cgroup v1, see D-008).
+- **Consequences:** The image is 527 MB. Adding Java means a bigger image or a split by language. Revisit at that point.
+
+### D-024 — Code and inputs go to the container as JSON on stdin; expected outputs never do · Accepted
+
+- **Decision:** `docker run -i`, with no bind mounts. The runner writes the code to `/tmp/work`, streams one JSON line per test (status, time, stdout, stderr) and the **host** compares the output.
+- **Why:** User code can read anything inside its container, so expected outputs must never be there, and a test confirms this. Skipping bind mounts also avoids host-path problems when the worker runs inside a container against a remote or socket-mounted daemon.
+- **Consequences:** All hidden inputs are held in the runner's memory, a few MB per problem, which is charged to the sandbox overhead (D-028).
+
+### D-025 — Drive Docker through the CLI (`child_process.spawn`), not dockerode · Accepted
+
+- **Why:** There's no extra dependency, the flags match what you'd type when debugging, and stdin/stdout streaming is trivial. Every container is named `judge-<uuid>`, so the deadline can `docker kill` it.
+- **Consequences:** The `docker` binary must be on the worker host. Spawning costs a few ms per submission, which is negligible next to container start.
+
+### D-026 — Wall-clock time limits; Python gets 3× the base limit · Accepted
+
+- **Decision:** `Problem.timeLimitMs` (default 1000 ms) is the C++ limit. Python gets ×3 through `effectiveTimeLimitMs`. The limit is wall clock, so `sleep` gets TLE. `RLIMIT_CPU` is a backstop. `GET /problems/:slug` shows the effective limit per language.
+- **Why:** Python is 10–50× slower than C++ on tight loops, so a single limit would make Python unusable on Medium and Hard problems. Every Python reference fits within 565 ms of its 3 s limit, so ×3 leaves good headroom.
+- **Consequences:** Matches between a C++ player and a Python player aren't perfectly fair on time-critical problems. That is accepted for v1.
+
+### D-027 — Always run every test; the overall verdict is the first failing test's · Accepted
+
+- **Decision:** The judge does not stop at the first failure. `testsPassed/testsTotal` are always exact, and the overall verdict is ACCEPTED or the verdict of the lowest-index failing test.
+- **Why:** Phase 4's tiebreak is "most hidden tests passed", which needs exact partial counts.
+- **Consequences:** The worst case is about `tests × timeLimit`, for example 9 × 3 s for a Python TLE. The host deadline caps it (startup + compile + tests × (limit + 0.5 s)), and every test that hasn't reported by then is marked TLE.
+
+### D-028 — How MLE and output limits are detected · Accepted
+
+- **MLE:** The runner reads the cgroup v2 `memory.events` `oom_kill` counter before and after each test. `MemoryError` and `std::bad_alloc` in stderr also count as MLE. Container memory is the problem limit + 64 MB (runner, inputs, tmpfs pages), and swap is off.
+- **Output:** `RLIMIT_FSIZE` is set to 8 MB per test. Going over it gives `RUNTIME_ERROR` with "Output limit exceeded", and `/tmp` is a 64 MB tmpfs.
+- **Consequences:** The memory limit is approximate. The program gets about the stated MB, with slack from the overhead. Per-test peak memory isn't reported yet: `memory.peak` reset needs a newer kernel API, so revisit then.
+
+### D-029 — Problems are visible to signed-in users only · Revisit in Phase 4
+
+- **Context:** Practice mode needs problem statements, but battles choose problems "either player hasn't seen". A public catalogue lets people pre-solve the whole set.
+- **Decision for now:** All problem endpoints require auth. Hidden tests are never served.
+- **Revisit:** In Phase 4, decide whether the battle pool is separate from practice or excluded once a user has viewed or submitted a problem.
+
+### D-030 — Every RUN and SUBMIT is a persisted `Submission`; clients poll for now · Accepted (push in Phase 3/4)
+
+- **Decision:** Both kinds go through the same queue and table, so there is one code path. `POST` returns 202 with the id, and the client polls `GET /api/submissions/:id`. RUN results include sample I/O (stdout clipped at 4 KB, stderr at 2 KB). SUBMIT results carry only `{index, verdict, timeMs}`.
+- **Alternatives:** Having the API `await job.waitUntilFinished()` ties up HTTP connections for seconds and doesn't fit battles. Not persisting RUN loses useful history and adds a second path.
+- **Consequences:** Once sockets exist (Phase 3), the worker publishes completion and the battle UI gets pushed updates. Polling stays as a fallback.
+
+### D-031 — Test data is generated from a TS solver and cross-checked by an independent Python solution · Accepted
+
+- **Decision:** Each problem in `src/seed/problems.ts` has samples, a seeded hidden-test generator (mulberry32 keyed by slug, so seeding is deterministic), a TypeScript `solve` that produces expected outputs, and a **separately written** Python reference. A test judges every Python reference against every generated test, under the real Python limit.
+- **Why:** Hand-written expected outputs drift and are error-prone. Two independent solutions that agree on edge-case and max-size tests give high confidence that the data is right, and the same test proves the limits are achievable in the slower language. The implementations deliberately differ for several problems: Prim vs Kruskal, merge sort vs Fenwick tree, two Manacher formulations, and block decomposition vs deque.
+- **Consequences:** Adding a problem means writing both solutions. Expected outputs are recomputed on each seed, so changing a generator changes the stored tests.
+
+### D-032 — Judge reliability: retry infra errors only, per-user rate limits, queue backpressure · Accepted
+
+- **Decision:**
+  - Bad user code always produces a verdict, never an exception. Only `JudgeError`s and other infrastructure failures throw. They get 3 attempts with exponential backoff, then status `FAILED`, which the client shows as "judge error, try again" and not as a verdict.
+  - Run/submit are limited to 10/min per user. The rate-limit `keyGenerator` verifies the bearer token itself, because the plugin's hook runs before route-level `authenticate`.
+  - The API returns 503 once `JUDGE_QUEUE_MAX` jobs are waiting.
+- **Consequences:** A dead judge fleet shows up as FAILED submissions plus 503s instead of an ever-growing queue.
+
+### D-033 — `pnpm dev` starts the API and the judge worker · Accepted
+
+- **Decision:** The server's `dev` script is `pnpm run "/^dev:/"`, which runs `dev:api` and `dev:worker` in parallel. The root `pnpm dev` therefore starts web, API and worker.
+- **Consequences:** Local dev needs the judge image (`pnpm --filter @thegrave/server judge:build`, which the tests also run).
