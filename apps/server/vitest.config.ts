@@ -16,5 +16,7 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     // Files share one database, so run them one at a time.
     fileParallelism: false,
+    // Judge tests start real containers.
+    testTimeout: 60_000,
   },
 });

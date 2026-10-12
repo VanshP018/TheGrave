@@ -11,7 +11,7 @@ export async function setupApp(): Promise<FastifyInstance> {
 }
 
 export async function resetState() {
-  await prisma.$executeRawUnsafe('TRUNCATE "RefreshToken", "User" CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE "RefreshToken", "User", "Problem" CASCADE');
   await redis.flushdb();
 }
 
@@ -29,3 +29,13 @@ export const alice = {
   email: 'alice@example.com',
   password: 'correct-horse-battery',
 };
+
+/** Registers a user and returns a bearer header for them. */
+export async function registerUser(app: FastifyInstance, username: string) {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: { username, email: `${username}@example.com`, password: 'correct-horse-battery' },
+  });
+  return { authorization: `Bearer ${res.json().accessToken as string}` };
+}

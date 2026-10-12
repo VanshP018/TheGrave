@@ -10,6 +10,7 @@ import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { AuthError } from './modules/auth/service.js';
+import { problemRoutes } from './modules/problems/routes.js';
 import authenticate from './plugins/authenticate.js';
 
 export async function buildApp() {
@@ -62,6 +63,7 @@ export async function buildApp() {
   // All client-facing routes live under /api so paths (and the refresh cookie's Path) are identical
   // behind the Vite dev proxy and the production reverse proxy. /health stays at the root for probes.
   await app.register(authRoutes, { prefix: '/api' });
+  await app.register(problemRoutes, { prefix: '/api' });
 
   return app;
 }

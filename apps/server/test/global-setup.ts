@@ -12,6 +12,9 @@ export default async function setup() {
   if (!rowCount) await admin.query(`CREATE DATABASE "${dbName}"`);
   await admin.end();
 
+  // Layer cache makes this ~instant when nothing changed.
+  execSync('docker build -q -t thegrave-judge:latest judge', { stdio: 'ignore' });
+
   execSync('pnpm exec prisma migrate deploy', {
     env: { ...process.env, DATABASE_URL: testEnv.DATABASE_URL },
     stdio: 'ignore',
