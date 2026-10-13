@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { PublicUser } from '@thegrave/shared';
 import { useNavigate } from 'react-router';
+import { Lobby } from '../components/Lobby';
 import { api, authApi } from '../lib/api';
 import { useAuth } from '../stores/auth';
 
@@ -27,9 +28,9 @@ export function HomePage() {
       <section className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
         <h1 className="text-3xl font-bold">Welcome, {me?.username ?? '…'}</h1>
         <p className="mt-2 text-zinc-400">
-          Rating <span className="font-mono text-emerald-400">{me?.rating ?? '—'}</span>.
-          Matchmaking arrives in Phase 3.
+          Rating <span className="font-mono text-emerald-400">{me?.rating ?? '—'}</span>
         </p>
+        <Lobby />
       </section>
     </main>
   );
