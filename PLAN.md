@@ -76,7 +76,7 @@ _Spike result: Python p95 672 ms per container (target < 1.5 s). Single judge im
 
 ---
 
-## Phase 3 — Realtime & Matchmaking
+## Phase 3 — Realtime & Matchmaking ✅ (done 2026-11-18)
 
 - Socket.IO with `@socket.io/redis-adapter`; handshake authenticates the access JWT
 - Queue = Redis ZSET scored by rating; per-user queue metadata (joinedAt)
@@ -86,7 +86,9 @@ _Spike result: Python p95 672 ms per container (target < 1.5 s). Single judge im
 - Match accept/ready check (10 s) → decline/timeout returns the other player to the queue
 - Guard: a user can be in at most one queue/match (Redis key `user:{id}:state`)
 
-**Exit:** test with 200 simulated clients — no double matches, no orphaned queue entries, fair rating spread.
+**Exit:** test with 200 simulated clients — no double matches, no orphaned queue entries, fair rating spread. ✔ (`test/matchmaking-stress.test.ts`: 200 clients on 2 nodes with decliners/AFK/multi-tab; mean rating diff ≈ 13, max ≤ 152)
+
+_Beyond the plan: the lock is only an optimisation — every transition is a Lua script (D-034); queue entries are leases so a crashed node cannot leave orphans (D-035). Confirmed matches go to an `onConfirmed` hook that Phase 4 plugs the battle into (D-038)._
 
 ---
 

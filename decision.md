@@ -73,6 +73,37 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
   - Ran `pnpm dev` and submitted a real C++ solution over HTTP: `ACCEPTED 9/9`. No judge containers were left behind. Typecheck and lint are green.
 - Not done in this phase: a frontend for practice or the editor (Monaco UI is Phase 6), and pushing results over sockets (Phase 3/4; for now the client polls).
 
+### 2026-11-18 — Phase 3: Realtime & Matchmaking
+
+- **Approach:** every matchmaking state change is a Redis Lua script, so correctness comes from atomicity, not from timing or locks (D-034). Leases on queue entries make orphans impossible even when a node crashes (D-035).
+- Shared socket contract (`packages/shared/src/socket-events.ts`):
+  - client → server: `queue:join`, `queue:leave`, `match:accept`, `match:decline`, all **acked** with `{ok} | {ok:false, code, message}`
+  - server → client: `queue:joined`, `queue:left`, `queue:stats`, `match:found`, `match:accepted`, `match:confirmed`, `match:cancelled`
+  - `userRoom(id)` helper
+- Server `src/matchmaking/scripts.ts` has 7 Lua scripts: join, leave, tick, accept, decline, release, describe. They share one prelude and one key layout and take time from Redis `TIME`. They are called with EVALSHA, falling back to EVAL on NOSCRIPT.
+- Server `src/matchmaking/matchmaker.ts`: the `Matchmaker` class, independent of Socket.IO. It talks to a `Notifier`, which makes it testable with a fake.
+  - The rating comes from Postgres on join, never from the client.
+  - The tick runs on whichever node wins `SET mm:tick-lock NX PX`.
+  - Lease renewal is one `ZADD XX` per node.
+  - Has an `onConfirmed` hook.
+  - `stop()` waits for in-flight work.
+- Server `src/realtime/index.ts`:
+  - Socket.IO, WebSocket transport only, with `@socket.io/redis-adapter` (duplicated ioredis pub/sub clients).
+  - JWT handshake middleware (`auth.token`); every socket joins `user:{id}`.
+  - Per-socket rate limit: 30 events per 10 s.
+  - The current state is resent on (re)connect, so a page reload mid-ready-check still shows it.
+  - Dequeue on disconnect only if the user has no socket left on any node.
+  - A node that is shutting down gracefully doesn't dequeue anyone, so clients keep their place when they reconnect to another node.
+- Web:
+  - `lib/socket.ts`: the `auth` callback always sends the current in-memory token, and `unauthorized` triggers a refresh and reconnect.
+  - `stores/lobby.ts`, plus a minimal `Lobby` on the home page: find match/cancel with a wait timer, live queue size, and a ready-check panel with countdown and accept/decline. A polished lobby is Phase 6.
+- **Bug found by the stress test:** a teardown "Connection is closed" unhandled rejection showed up in about 1 of 3 runs. A tick that started just before `stop()` ran against Redis after it was quit, and production's `index.ts` shutdown has the same close-then-quit order. `Matchmaker.stop()` now waits for in-flight ticks and renewals, and `preClose` waits for it. Six reruns were clean.
+- **Verified:** `pnpm test` passes 89/89, adding 14 matchmaker behaviour tests and 2 stress tests.
+  - Behaviour tests: join, concurrent duplicate joins, closest/oldest-first pairing, window steps 50→75→100, the ±400 cap, 10 concurrent ticks over 100 players, confirm, busy guard, release, outsider accept, decline-requeue with the original `joinedAt`, timeout requeue/drop, late accept rejected, resync, lease purge, lease renewal, and renew not enqueueing anyone.
+  - **Exit criterion:** 200 real Socket.IO clients across **2 API nodes**. 5% decliners, 5% AFK, every player double-clicks join, and 10% have a second tab on the other node. There were no double matches: each ready check has exactly 2 symmetric participants, no player had overlapping checks, and no player was confirmed twice. After disconnect, `mm:queue`, `mm:joined`, `mm:lease`, `mm:ready:*` and `user:*:state` are all empty, so nothing was orphaned. Rating spread was fair: 89–90 matches, mean difference 10–15, p90 26–43, max 78–152, under the ±400 cap. Stable across 7 runs, about 8 s each.
+  - Two clients through the **Vite dev proxy** with production defaults got matched on the first 1 s tick and confirmed.
+  - Typecheck, lint and the web build are green. The lobby UI has not been clicked through in a real browser.
+
 ---
 
 ## Decisions
@@ -285,3 +316,48 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 
 - **Decision:** The server's `dev` script is `pnpm run "/^dev:/"`, which runs `dev:api` and `dev:worker` in parallel. The root `pnpm dev` therefore starts web, API and worker.
 - **Consequences:** Local dev needs the judge image (`pnpm --filter @thegrave/server judge:build`, which the tests also run).
+
+### D-034 — Matchmaking state changes only through Lua scripts; the tick lock is an optimisation · Accepted
+- **Context:** The plan asks for a `SET NX PX` lock so only one node matches at a time, plus atomic pairing. A lock alone is not safe: it can expire mid-tick during a GC pause or a slow Redis call, and then two nodes match concurrently.
+- **Decision:** Every transition (join, leave, the whole tick pass, accept, decline, release) is one Lua script, and each script checks `user:{id}:state` before acting. The whole tick (purge leases → expire ready checks → pair) is **one** script. The lock is still taken so that only one node does the work each interval, but correctness doesn't depend on it. A test fires 10 ticks concurrently over 100 players and gets exactly 50 pairs, with no player in two.
+- **Time:** Scripts use Redis `TIME`, so waiting windows, leases and deadlines all come from one clock, whatever the skew between API nodes.
+- **Consequences:** The tick is O(n log n) in queue size and blocks Redis while it runs. That's microseconds at hundreds of players, and `maxPairsPerTick` bounds it. Past roughly 10k concurrently queued players, shard the queue by rating band. Keys built inside scripts (`user:{id}:state`, `mm:ready:{id}`) assume one Redis, not Redis Cluster; Cluster would need hash tags.
+
+### D-035 — Queue entries are leases renewed by the node holding the socket · Accepted
+- **Context:** The exit criterion is "no orphaned queue entries". Disconnect handlers aren't enough, because a crashed or partitioned node never runs them, and its users would sit in the queue forever, matchable but unreachable.
+- **Decision:**
+  - `mm:lease` (ZSET, userId → expiry, 15 s) is set on join.
+  - Every node renews leases every 5 s for all **locally connected** users with a single `ZADD mm:lease XX …`. `XX` makes this a no-op for users who aren't queued, so a node never needs to know who is queued.
+  - The tick purges expired leases first and tells the user `queue:left {reason:'expired'}` if they are still connected anywhere.
+  - Disconnect: dequeue right away only if `fetchSockets()` across the cluster finds no other socket for that user (multi-tab). If that lookup fails, do nothing and let the lease expire.
+  - Graceful shutdown: skip the dequeue. Clients reconnect to another node within the lease, and the resync tells them they are still queued.
+- **Consequences:** After a crash, orphans live for at most `leaseMs` plus one tick. A live socket renews at most N user ids every 5 s, which is cheap.
+
+### D-036 — Pairing: longest-waiting first, closest rating inside the waiter's own window · Accepted
+- **Decision:** Iterate `mm:joined` oldest-first. Each player's window is `min(50 + 25·⌊wait/5 s⌋, 400)`, as the plan specifies. Pick the closest rating inside it, breaking ties by longer wait. Look at most 3 neighbours on each side with `ZRANGEBYSCORE … LIMIT`.
+- **Alternatives:**
+  - *Mutual window* (both windows must contain the other) penalises long waiters, because a newcomer's ±50 blocks them.
+  - *Global optimal matching* (minimum-weight perfect matching) is more complex and slower, and gains little at this scale.
+  - *RD-aware windows* (D-010): left for later. Uncertain players could start with a wider window.
+- **Measured** with 200 players uniform on 1000–2000: mean difference 10–15, p90 ≤ 43, max ≤ 152.
+- **Consequences:** Window parameters are code constants (`DEFAULT_MATCHMAKER_OPTIONS`), not env vars. Tests pass shorter intervals.
+
+### D-037 — Ready-check semantics · Accepted
+- **Decision:**
+  - A ready check lasts 10 s. The deadline lives in `mm:ready:deadlines`, and the tick expires it. Accepts after the deadline are refused even if the tick hasn't run yet.
+  - Decline: the decliner goes back to idle, and the other player is **requeued with their original `joinedAt`**, so they keep their place and their widened window.
+  - Timeout: players who accepted are requeued the same way. Players who didn't respond are dropped, so an AFK player can't keep pulling others into failed checks.
+  - Confirm happens when both accept. `user:{id}:state = match:{id}`, with a 2 h safety-net TTL.
+- **Not done (revisit if abused):** a cooldown for repeat decliners.
+
+### D-038 — Ready-check ids come from a Redis counter; a confirmed match goes to an `onConfirmed` hook · Accepted (Phase 4 plugs in)
+- **Decision:** Ready-check ids are `INCR mm:seq`, which can be generated inside the Lua script. Phase 4 creates the `Match` row, with its UUID, inside `onConfirmed`. Phase 3 has no battle yet, so the default hook calls `release()` straight away and players can queue again. `release()` is a compare-and-delete on `match:{id}`, which is also what Phase 4 calls when a battle ends.
+- **Consequences:** Clients see ready-check ids in `match:found`. Phase 4 will send the real match id when the battle starts.
+
+### D-039 — Socket protocol: handshake-only auth, acks, per-user rooms, resync on connect · Accepted
+- **Auth:** The JWT is verified in the handshake middleware and is never put in the URL. The client's `auth` is a callback that sends the current in-memory token on every reconnect. An `unauthorized` connect error triggers one refresh, then a reconnect. A connection is **not** re-checked when its 15-min token expires: revocation applies at the next reconnect. Revisit if an admin "kick" is needed.
+- **Acks** on every client event give the UI a definite result, e.g. `ALREADY_IN_MATCH` or `MATCH_NOT_FOUND`.
+- **Rooms:** Events go to `user:{id}`, so all tabs on all nodes stay in sync. For example, joining in one tab shows "searching" in the others.
+- **Resync:** On connect, the server resends `queue:joined` or `match:found` from the current Redis state. A reload or reconnect during a ready check keeps it alive.
+- **Limits:** 30 events per 10 s per socket. HTTP rate limits don't apply to WebSocket frames.
+- **Known gap:** The ready countdown uses the client clock against the server's `expiresAt`. Phase 4 adds the server clock offset (D-009).
