@@ -199,6 +199,19 @@ end
 return released
 `;
 
+/** ARGV: fromId, toId, ttlMs, userIds... → moves 'match:{from}' to 'match:{to}' (ready id → Match id) */
+const REBIND = `
+local moved = 0
+for i = 4, #ARGV do
+  local k = stateKey(ARGV[i])
+  if redis.call('GET', k) == 'match:' .. ARGV[1] then
+    redis.call('SET', k, 'match:' .. ARGV[2], 'PX', tonumber(ARGV[3]))
+    moved = moved + 1
+  end
+end
+return moved
+`;
+
 /** ARGV: userId → {state, joinedAt|readyHash...} for resyncing a (re)connecting socket. */
 const DESCRIBE = `
 local u = ARGV[1]
@@ -237,5 +250,6 @@ export const scripts = {
   accept: script(ACCEPT),
   decline: script(DECLINE),
   release: script(RELEASE),
+  rebind: script(REBIND),
   describe: script(DESCRIBE),
 };

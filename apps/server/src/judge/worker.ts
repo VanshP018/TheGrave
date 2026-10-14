@@ -1,5 +1,6 @@
 import { Worker } from 'bullmq';
 import type { Logger } from 'pino';
+import { scheduleBattleJob } from '../battle/queue.js';
 import { prisma } from '../lib/prisma.js';
 import { redis } from '../lib/redis.js';
 import type { Executor } from './executor.js';
@@ -28,6 +29,11 @@ export function createJudgeWorker(executor: Executor, opts: { concurrency: numbe
         .update({
           where: { id: job.data.submissionId },
           data: { status: 'FAILED', finishedAt: new Date() },
+        })
+        // A failed battle submission is no longer pending, so the battle can be decided without it.
+        .then(async (s) => {
+          if (s.matchId)
+            await scheduleBattleJob({ type: 'judged', matchId: s.matchId, submissionId: s.id });
         })
         .catch(() => {});
     }

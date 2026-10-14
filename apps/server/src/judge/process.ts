@@ -1,4 +1,5 @@
 import type { TestResultView } from '@thegrave/shared';
+import { scheduleBattleJob } from '../battle/queue.js';
 import { prisma } from '../lib/prisma.js';
 import { effectiveTimeLimitMs, type Executor } from './executor.js';
 
@@ -54,4 +55,7 @@ export async function processSubmission(submissionId: string, executor: Executor
       finishedAt: new Date(),
     },
   });
+  // The judge stays battle-agnostic: it only hands the verdict to the battle queue (decision.md D-043).
+  if (sub.matchId)
+    await scheduleBattleJob({ type: 'judged', matchId: sub.matchId, submissionId: sub.id });
 }

@@ -1,5 +1,6 @@
 import { createAdapter } from '@socket.io/redis-adapter';
 import {
+  matchRoom,
   userRoom,
   type Ack,
   type AckError,
@@ -9,14 +10,16 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { Server, type Socket } from 'socket.io';
 import { config } from '../config.js';
+import { createBattleWorker } from '../battle/worker.js';
+import { BattleService, type BattleNotifier, type BattleOptions } from '../battle/service.js';
 import { redis } from '../lib/redis.js';
 import { verifyAccessToken } from '../lib/tokens.js';
 import {
   Matchmaker,
   type ConfirmedMatch,
   type MatchmakerOptions,
-  type Notifier,
 } from '../matchmaking/matchmaker.js';
+import { matchRoutes } from '../modules/matches/routes.js';
 
 interface SocketData {
   user: { id: string; username: string };
@@ -41,13 +44,30 @@ const RATE_MAX_EVENTS = 30;
 
 export interface RealtimeOptions {
   matchmaker?: Partial<MatchmakerOptions>;
-  /**
-   * What happens once both players accept. Phase 3 has no battle yet, so the default releases the
-   * players straight away; Phase 4 replaces this with "create Match + start battle".
-   */
+  battle?: Partial<BattleOptions>;
+  /** What happens once both players accept. Defaults to starting a battle; tests may override. */
   onConfirmed?: (match: ConfirmedMatch, mm: Matchmaker) => Promise<void> | void;
 }
 
+const battleOptionsFromConfig = (): Partial<BattleOptions> => ({
+  countdownMs: config.BATTLE_COUNTDOWN_MS,
+  graceMs: config.BATTLE_RECONNECT_GRACE_MS,
+  submitCooldownMs: config.BATTLE_SUBMIT_COOLDOWN_MS,
+  ...(config.BATTLE_DURATION_MS
+    ? {
+        durationMs: {
+          EASY: config.BATTLE_DURATION_MS,
+          MEDIUM: config.BATTLE_DURATION_MS,
+          HARD: config.BATTLE_DURATION_MS,
+        },
+      }
+    : {}),
+});
+
+/**
+ * Composition root for everything realtime: Socket.IO, matchmaking, battles (+ their HTTP routes and
+ * job worker). Call after `buildApp()` and before `listen()`.
+ */
 export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {}) {
   const pub = redis.duplicate();
   const sub = redis.duplicate();
@@ -59,25 +79,28 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     adapter: createAdapter(pub, sub),
   });
 
-  const notifier: Notifier = {
+  const notifier: BattleNotifier = {
     toUser: (userId, event, ...args) => io.to(userRoom(userId)).emit(event, ...args),
+    toRoom: (room, event, ...args) => io.to(room).emit(event, ...args),
     broadcast: (event, ...args) => io.emit(event, ...args),
+    joinRoom: (userId, room) => io.in(userRoom(userId)).socketsJoin(room),
+    isConnected: async (userId) => (await io.in(userRoom(userId)).fetchSockets()).length > 0,
   };
   const mm: Matchmaker = new Matchmaker(
     redis,
     notifier,
     {
       localUserIds: () => [...io.of('/').sockets.values()].map((s) => s.data.user.id),
-      onConfirmed: (m) =>
-        opts.onConfirmed
-          ? opts.onConfirmed(m, mm)
-          : void mm.release(
-              m.matchId,
-              m.players.map((p) => p.id),
-            ),
+      onConfirmed: async (m) => {
+        if (opts.onConfirmed) await opts.onConfirmed(m, mm);
+        else await battle.createMatch(m);
+      },
     },
     opts.matchmaker,
   );
+  const battle = new BattleService(notifier, mm, { ...battleOptionsFromConfig(), ...opts.battle });
+  const battleWorker = createBattleWorker(battle);
+  void app.register(matchRoutes, { prefix: '/api', battle });
 
   // Handshake auth: the access JWT travels in the Socket.IO `auth` payload, never in the URL.
   io.use((socket, next) => {
@@ -99,7 +122,11 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
   io.on('connection', (socket) => {
     const userId = socket.data.user.id;
     void socket.join(userRoom(userId));
-    void resync(socket, mm).catch((err) => app.log.error({ err }, 'resync failed'));
+    void resync(socket, mm, battle).catch((err) => app.log.error({ err }, 'resync failed'));
+
+    socket.on('time:sync', (ack) => {
+      if (typeof ack === 'function') ack({ serverNow: Date.now() });
+    });
 
     socket.on('queue:join', (ack) =>
       handle(socket, ack, async () => {
@@ -135,7 +162,10 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
       // If the cluster-wide lookup fails, the queue lease expires on its own (D-035).
       try {
         const remaining = await io.in(userRoom(userId)).fetchSockets();
-        if (remaining.length === 0) await mm.leave(userId, 'disconnected');
+        if (remaining.length === 0) {
+          await mm.leave(userId, 'disconnected');
+          await battle.markAway(userId);
+        }
       } catch (err) {
         app.log.warn({ err, userId }, 'could not check remaining sockets on disconnect');
       }
@@ -147,13 +177,14 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
   app.addHook('preClose', async () => {
     shuttingDown = true;
     await mm.stop();
+    await battleWorker.close();
     io.local.disconnectSockets(true);
   });
   app.addHook('onClose', async () => {
     await Promise.allSettled([pub.quit(), sub.quit()]);
   });
 
-  return { io, matchmaker: mm };
+  return { io, matchmaker: mm, battle };
 }
 
 const fail = (code: AckError, message: string): Ack => ({ ok: false, code, message });
@@ -172,8 +203,19 @@ async function handle<T extends Ack>(socket: GraveSocket, ack: unknown, fn: () =
   }
 }
 
-/** A (re)connecting socket learns the user's current matchmaking state, e.g. after a page reload. */
-async function resync(socket: GraveSocket, mm: Matchmaker) {
+/** A (re)connecting socket learns the user's current matchmaking/battle state, e.g. after a page reload. */
+async function resync(socket: GraveSocket, mm: Matchmaker, battle: BattleService) {
+  const match = await battle.currentMatch(socket.data.user.id);
+  if (match) {
+    await socket.join(matchRoom(match.id));
+    await battle.markPresent(socket.data.user.id);
+    socket.emit('battle:created', {
+      matchId: match.id,
+      startsAt: match.startsAt.getTime(),
+      endsAt: match.endsAt.getTime(),
+    });
+    return;
+  }
   const s = await mm.describe(socket.data.user.id);
   if (s.state === 'queued') socket.emit('queue:joined', { joinedAt: s.joinedAt });
   if (s.state === 'ready') {

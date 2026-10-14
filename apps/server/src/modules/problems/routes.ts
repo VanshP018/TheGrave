@@ -1,8 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   codeSubmissionSchema,
-  LANGUAGES,
-  type Language,
   type ProblemDetail,
   type ProblemSummary,
   type SubmissionKind,
@@ -11,10 +9,10 @@ import {
 } from '@thegrave/shared';
 import { z } from 'zod';
 import { config } from '../../config.js';
-import { effectiveTimeLimitMs } from '../../judge/executor.js';
 import { enqueueSubmission, submissionsQueue } from '../../judge/queue.js';
 import { prisma } from '../../lib/prisma.js';
 import { userRateLimitKey } from '../../plugins/authenticate.js';
+import { markSeen, toProblemDetail } from './detail.js';
 
 const slugParams = z.object({ slug: z.string().max(100) });
 const idParams = z.object({ id: z.uuid() });
@@ -22,7 +20,7 @@ const idParams = z.object({ id: z.uuid() });
 const notFound = { error: 'Not Found', message: 'Not found' };
 
 export async function problemRoutes(app: FastifyInstance) {
-  // Problems are only visible to signed-in users (see decision.md D-029).
+  // Problems are only visible to signed-in users, and viewing one marks it seen (decision.md D-029, D-042).
   app.addHook('onRequest', app.authenticate);
 
   app.get('/problems', async (): Promise<ProblemSummary[]> => {
@@ -39,18 +37,8 @@ export async function problemRoutes(app: FastifyInstance) {
       include: { testCases: { where: { isSample: true }, orderBy: { ordinal: 'asc' } } },
     });
     if (!p) return reply.code(404).send(notFound);
-    const body: ProblemDetail = {
-      slug: p.slug,
-      title: p.title,
-      difficulty: p.difficulty,
-      statement: p.statement,
-      timeLimitMs: Object.fromEntries(
-        LANGUAGES.map((l) => [l, effectiveTimeLimitMs(p.timeLimitMs, l)]),
-      ) as Record<Language, number>,
-      memoryLimitMb: p.memoryLimitMb,
-      starterCode: p.starterCode as Record<Language, string>,
-      samples: p.testCases.map((t) => ({ input: t.input, expected: t.expected })),
-    };
+    await markSeen([req.auth!.userId], p.id);
+    const body: ProblemDetail = toProblemDetail(p);
     return body;
   });
 
@@ -75,6 +63,7 @@ export async function problemRoutes(app: FastifyInstance) {
     const sub = await prisma.submission.create({
       data: { userId: req.auth!.userId, problemId: problem.id, kind, language, code },
     });
+    await markSeen([req.auth!.userId], problem.id);
     await enqueueSubmission(sub.id);
     return reply.code(202).send({ id: sub.id, status: sub.status });
   };

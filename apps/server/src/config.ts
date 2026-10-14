@@ -18,6 +18,11 @@ const envSchema = z.object({
   JUDGE_CONCURRENCY: z.coerce.number().int().positive().default(2),
   // Backpressure: reject new submissions with 503 once this many are waiting.
   JUDGE_QUEUE_MAX: z.coerce.number().int().positive().default(500),
+  // Battles (decision.md D-040..D-044). The duration override exists for E2E tests.
+  BATTLE_COUNTDOWN_MS: z.coerce.number().int().nonnegative().default(5000),
+  BATTLE_DURATION_MS: z.coerce.number().int().positive().optional(),
+  BATTLE_RECONNECT_GRACE_MS: z.coerce.number().int().positive().default(30_000),
+  BATTLE_SUBMIT_COOLDOWN_MS: z.coerce.number().int().nonnegative().default(5000),
 });
 
 export const config = envSchema.parse(process.env);

@@ -7,7 +7,7 @@ datasource db {
   provider = "postgresql"
 }
 
-// Match/RatingHistory are added in later phases (see PLAN.md).
+// RatingHistory is added in Phase 5 (see PLAN.md).
 
 model User {
   id           String   @id @default(uuid(7)) @db.Uuid
@@ -23,6 +23,8 @@ model User {
 
   refreshTokens RefreshToken[]
   submissions   Submission[]
+  matches       MatchPlayer[]
+  seenProblems  SeenProblem[]
 }
 
 model RefreshToken {
@@ -88,6 +90,8 @@ model Problem {
 
   testCases   TestCase[]
   submissions Submission[]
+  matches     Match[]
+  seenBy      SeenProblem[]
 
   @@index([difficulty])
 }
@@ -121,9 +125,71 @@ model Submission {
   compileOutput String?
   // Per-test results; for RUN also truncated stdout/stderr (see TestResultView in @thegrave/shared)
   results       Json?
+  // Set for submissions made inside a battle
+  matchId       String?          @db.Uuid
+  match         Match?           @relation(fields: [matchId], references: [id], onDelete: Cascade)
   createdAt     DateTime         @default(now())
   finishedAt    DateTime?
 
   @@index([userId, createdAt])
+  @@index([problemId])
+  @@index([matchId, userId])
+}
+
+enum MatchStatus {
+  PENDING // created, countdown running, problem hidden
+  ACTIVE
+  FINISHED
+  ABORTED // no result: both players gone
+}
+
+enum MatchEndReason {
+  SOLVED // first full ACCEPTED
+  TIMEOUT // decided on tests passed (or draw) at endsAt
+  FORFEIT // a player stayed disconnected past the grace period
+  ABANDONED // both players disconnected
+}
+
+model Match {
+  id         String          @id @default(uuid(7)) @db.Uuid
+  problemId  String          @db.Uuid
+  problem    Problem         @relation(fields: [problemId], references: [id])
+  status     MatchStatus     @default(PENDING)
+  // Server-authoritative timer (decision.md D-009)
+  startsAt   DateTime
+  endsAt     DateTime
+  finishedAt DateTime?
+  // null on FINISHED means a draw
+  winnerId   String?         @db.Uuid
+  endReason  MatchEndReason?
+  createdAt  DateTime        @default(now())
+
+  players     MatchPlayer[]
+  submissions Submission[]
+
+  @@index([status])
+}
+
+model MatchPlayer {
+  matchId      String @db.Uuid
+  match        Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userId       String @db.Uuid
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Snapshot for Phase 5 (Glicko-2 update) and for display
+  ratingBefore Float
+
+  @@id([matchId, userId])
+  @@index([userId])
+}
+
+/// A problem a user has seen (practice view, any submission, or a battle). Battles avoid these.
+model SeenProblem {
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId String   @db.Uuid
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  seenAt    DateTime @default(now())
+
+  @@id([userId, problemId])
   @@index([problemId])
 }

@@ -161,6 +161,16 @@ export class Matchmaker {
     return scripts.release.run<number>(this.redis, [matchId, ...userIds]);
   }
 
+  /** Re-keys the players' `match:{readyId}` state to the persisted Match id, atomically. */
+  async rebind(fromId: string, toId: string, userIds: string[]): Promise<number> {
+    return scripts.rebind.run<number>(this.redis, [
+      fromId,
+      toId,
+      this.opts.matchStateTtlMs,
+      ...userIds,
+    ]);
+  }
+
   async describe(userId: string): Promise<UserState> {
     const res = await scripts.describe.run<string[]>(this.redis, [userId]);
     const [st] = res;
