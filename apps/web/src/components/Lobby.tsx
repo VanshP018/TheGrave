@@ -1,79 +1,19 @@
 import type { Ack } from '@thegrave/shared';
-import { useEffect, useState } from 'react';
-import { disconnectSocket, getSocket } from '../lib/socket';
+import { serverNow } from '../lib/clock';
+import { getSocket } from '../lib/socket';
+import { useNow } from '../lib/useNow';
 import { useAuth } from '../stores/auth';
 import { useLobby } from '../stores/lobby';
-
-/** Re-renders every `ms` so countdowns tick. */
-function useNow(ms = 250) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(t);
-  }, [ms]);
-  return now;
-}
-
-/** Wires socket events into the lobby store for as long as the lobby is mounted. */
-function useMatchmakingSocket() {
-  const set = useLobby((s) => s.set);
-  const me = useAuth((s) => s.user?.id);
-
-  useEffect(() => {
-    const s = getSocket();
-    s.on('connect', () => set({ connected: true }));
-    s.on('disconnect', () => set({ connected: false }));
-    s.on('queue:joined', ({ joinedAt }) => set({ status: 'queued', joinedAt, notice: null }));
-    s.on('queue:left', ({ reason }) =>
-      set({
-        status: 'idle',
-        joinedAt: null,
-        notice: reason === 'expired' ? 'You were removed from the queue (connection lost).' : null,
-      }),
-    );
-    s.on('queue:stats', ({ queued }) => set({ queued }));
-    s.on('match:found', ({ matchId, opponent, expiresAt }) =>
-      set({ status: 'ready', match: { id: matchId, opponent, expiresAt, accepted: [] } }),
-    );
-    s.on('match:accepted', ({ matchId, userId }) => {
-      const m = useLobby.getState().match;
-      if (m?.id === matchId)
-        set({ match: { ...m, accepted: [...new Set([...m.accepted, userId])] } });
-    });
-    s.on('match:confirmed', ({ opponent }) =>
-      set({
-        status: 'confirmed',
-        notice: `Match confirmed vs ${opponent.username}. Battles arrive in Phase 4.`,
-      }),
-    );
-    s.on('match:cancelled', ({ reason, requeued }) =>
-      set({
-        status: requeued ? 'queued' : 'idle',
-        match: null,
-        notice: requeued
-          ? 'Your opponent didn’t accept. Back in the queue, your place is kept.'
-          : reason === 'timeout'
-            ? 'You didn’t accept in time.'
-            : 'Match declined.',
-      }),
-    );
-    s.connect();
-    return () => {
-      s.removeAllListeners();
-      disconnectSocket();
-      set({ connected: false, status: 'idle', match: null });
-    };
-  }, [set, me]);
-}
 
 const emitAck = <T extends object>(fn: (ack: (r: Ack<T>) => void) => void) =>
   new Promise<Ack<T>>((resolve) => fn(resolve));
 
+/** Matchmaking UI. Socket events are wired by RealtimeProvider. */
 export function Lobby() {
-  useMatchmakingSocket();
   const { connected, status, joinedAt, queued, match, notice, set } = useLobby();
   const me = useAuth((s) => s.user?.id);
-  const now = useNow();
+  useNow();
+  const now = serverNow();
   const s = getSocket();
 
   const join = async () => {

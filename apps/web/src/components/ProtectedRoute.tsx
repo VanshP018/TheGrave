@@ -1,12 +1,17 @@
 import { Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from '../stores/auth';
+import { RealtimeProvider } from './RealtimeProvider';
 
 export function ProtectedRoute() {
   const status = useAuth((s) => s.status);
   const location = useLocation();
   if (status === 'loading') return <FullScreenMessage>Loading…</FullScreenMessage>;
   if (status === 'anonymous') return <Navigate to="/login" replace state={{ from: location }} />;
-  return <Outlet />;
+  return (
+    <RealtimeProvider>
+      <Outlet />
+    </RealtimeProvider>
+  );
 }
 
 /** For /login and /register: bounce signed-in users to the app. */
