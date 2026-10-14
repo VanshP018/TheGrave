@@ -1,4 +1,5 @@
-// Socket.IO contract shared by server and client. Phase 3 (matchmaking); battle events arrive in Phase 4.
+// Socket.IO contract shared by server and client: matchmaking (Phase 3) and battles (Phase 4).
+import type { MatchResult, PlayerProgress } from './battle.js';
 
 export interface Opponent {
   id: string;
@@ -33,6 +34,15 @@ export interface ServerToClientEvents {
     reason: MatchCancelReason;
     requeued: boolean;
   }) => void;
+
+  /** Both players accepted and the match exists; open /battle/{matchId}. */
+  'battle:created': (payload: { matchId: string; startsAt: number; endsAt: number }) => void;
+  'battle:started': (payload: { matchId: string }) => void;
+  /** Sent on every submit and verdict, for both players. Progress only, never code. */
+  'battle:progress': (payload: { matchId: string; player: PlayerProgress }) => void;
+  'battle:finished': (payload: { matchId: string; result: MatchResult }) => void;
+  /** One of *your* battle submissions finished judging; fetch /api/submissions/{id} for details. */
+  'submission:judged': (payload: { matchId: string; submissionId: string }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -40,7 +50,11 @@ export interface ClientToServerEvents {
   'queue:leave': (ack: (res: Ack) => void) => void;
   'match:accept': (payload: { matchId: string }, ack: (res: Ack) => void) => void;
   'match:decline': (payload: { matchId: string }, ack: (res: Ack) => void) => void;
+  /** NTP-style clock sync: client sends nothing, server acks with its epoch ms. */
+  'time:sync': (ack: (res: { serverNow: number }) => void) => void;
 }
 
 /** Room every socket of a user joins, so events reach all tabs on all nodes. */
 export const userRoom = (userId: string) => `user:${userId}`;
+/** Room for everyone in a battle. */
+export const matchRoom = (matchId: string) => `match:${matchId}`;
