@@ -104,6 +104,66 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
   - Two clients through the **Vite dev proxy** with production defaults got matched on the first 1 s tick and confirmed.
   - Typecheck, lint and the web build are green. The lobby UI has not been clicked through in a real browser.
 
+### 2026-11-18 — Phase 4: Battle Round
+
+- **Approach:** every way a match can end goes through **one** conditional update (`finish()`, D-040). The win rules are a **pure function** of the submissions (D-041). Every timer is a BullMQ delayed job that re-checks state when it fires, so timers survive restarts and never need cancelling (D-043).
+- Prisma:
+  - `Match` (status `PENDING|ACTIVE|FINISHED|ABORTED`, `startsAt/endsAt`, `winnerId`, `endReason` `SOLVED|TIMEOUT|FORFEIT|ABANDONED`)
+  - `MatchPlayer` (`ratingBefore` snapshot for Phase 5)
+  - `SeenProblem`
+  - `Submission.matchId`
+  - Migration `battles`.
+- Shared: `BattleView`, `PlayerProgress` (counts only, never code), `MatchResult`, `MySubmission`. New socket events: `battle:created|started|progress|finished`, `submission:judged`, plus `time:sync` and `matchRoom()`.
+- Server `src/battle/`:
+  - `outcome.ts`: the rules.
+  - `problem-pick.ts`: difficulty from average rating, excluding seen problems.
+  - `queue.ts`: the `battle` queue with jobs `start`, `end`, `judged`, `forfeit` and idempotent ids.
+  - `service.ts`: `BattleService` with lifecycle, the finish gate, presence, submit, views and progress.
+  - `worker.ts`: runs in every API node.
+- Matchmaker: a new `rebind` script atomically moves `user:{id}:state` from the ready-check id to the Match UUID. `onConfirmed` now creates the battle.
+- Judge: once a match submission is DONE or finally FAILED, it enqueues `judged` on the battle queue. It still knows nothing about battles or sockets.
+- API (participants only, 404 otherwise):
+  - `GET /api/matches/:id`: the full resync view. The problem stays hidden until `startsAt`.
+  - `POST /api/matches/:id/submit`: accepted only while `startsAt ≤ now < endsAt` by the server clock, limited to 1 per 5 s per user with a Redis `SET NX PX`. Returns 429 with `Retry-After`/`retryAfterMs`.
+  - Practice `GET /problems/:slug` and run/submit now record `SeenProblem`.
+- Realtime:
+  - Sockets join `match:{id}` when the match is created, or on reconnect.
+  - On connect, a live battle resends `battle:created` and cancels the away state.
+  - When the last socket disconnects, the player is marked away and a forfeit job is scheduled.
+  - `time:sync` acks the server time.
+- Web:
+  - `RealtimeProvider`: one socket for the signed-in app, so it survives lobby → battle. It feeds the lobby store, patches the battle query from `battle:progress`, and refetches on started/finished/judged.
+  - `lib/clock.ts`: NTP-style offset from 5 samples, keeping the one with the lowest round trip.
+  - Lazy `BattlePage`:
+    - countdown to the problem reveal, a timer corrected by the clock offset, statement and samples
+    - **locally bundled Monaco**, the language picker, Run samples and Submit
+    - your verdicts, both players' progress cards with an away countdown, and a result overlay
+    - drafts kept per match and language in `sessionStorage`
+  - The statement renderer builds React nodes (no `innerHTML`).
+- E2E: `pnpm test:e2e` runs Playwright with an isolated backend (D-045).
+- **Bugs found:**
+  1. **The reload race** (found by the E2E): a player who reloaded mid-battle **forfeited**. The new socket's resync cleared the away key *before* the old socket's disconnect handler wrote it. The forfeit job, and `markAway` straight after writing, now check cluster-wide presence (`fetchSockets`) instead of trusting event order (D-044). A deterministic regression test forces the bad ordering; it fails without the fix and passes with it.
+  2. A partially applied edit: the judge's final-FAILED handler had lost its battle hand-off after prettier reformatted it. ESLint's unused-import error caught it. Restored.
+  3. E2E harness: Playwright's "Desktop Chrome" device has a Windows user agent, so Monaco's select-all is Ctrl+A even on a Mac host. With Cmd+A the editor wasn't cleared, and the starter code swallowed stdin.
+  4. Two timing assumptions in my own integration tests: a 150 ms countdown elapsed before the "too early" submit, and disconnecting before a restart correctly triggered a forfeit.
+- **Verified:**
+  - `pnpm --filter @thegrave/server test` passes 114/114, adding 13 outcome-rule unit tests and 12 battle integration tests. The integration tests use the real Socket.IO, BullMQ, Postgres and judge-worker path with a scripted executor. They cover:
+    - lifecycle: problem hidden while PENDING, SOLVED win, release and requeue, the opponent seeing progress but never code
+    - access: non-participants get 404, the cooldown returns 429, and an earlier still-judging submission beats a later ACCEPTED
+    - endings: time-out on tests passed, draw, submit refused after the end
+    - disconnects: forfeit, reconnect cancelling the forfeit, the reload race, both gone → ABORTED
+    - **the end timer surviving an API node restart**
+    - seen-problem avoidance with the difficulty fallback
+  - The battle tests passed 3 times in a row before the reload fix, and again in the full-suite runs after it.
+  - **Exit criterion:** `pnpm test:e2e` passes 4/4 in two consecutive runs of about 1.3 min each, with two browser contexts through the real UI, Monaco, the Docker judge and Socket.IO via the Vite proxy:
+    - **win**, including a mid-battle reload resync, and the loser sees 9/9 progress but no code
+    - **time-out**: 1/9 beats 0/9
+    - **draw**
+    - **disconnect-forfeit**: the context closes, the opponent shows as away, and the other player wins after the grace period
+  - Typecheck, lint and web build are green.
+- **Observed flake:** `problems.test.ts` (30 Python references, 3 concurrent containers) failed 2 problems with TLE when run straight after the battle suite, with machine load average around 8.8 on 8 cores and another `pnpm dev` running. It passed 32/32 when rerun alone. CI should run it with low container concurrency (Phase 7).
+- **Not done:** Glicko-2 rating (Phase 5 hooks into `finish()`), match history and profile (Phase 5), lobby and battle polish (Phase 6). The Monaco chunk is 2.7 MB (700 KB gzipped), lazy-loaded; Phase 7 can trim it. Vite's dev proxy logs harmless `EPIPE` errors when a WebSocket closes during a reload.
+
 ---
 
 ## Decisions
@@ -286,7 +346,7 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 - **Output:** `RLIMIT_FSIZE` is set to 8 MB per test. Going over it gives `RUNTIME_ERROR` with "Output limit exceeded", and `/tmp` is a 64 MB tmpfs.
 - **Consequences:** The memory limit is approximate. The program gets about the stated MB, with slack from the overhead. Per-test peak memory isn't reported yet: `memory.peak` reset needs a newer kernel API, so revisit then.
 
-### D-029 — Problems are visible to signed-in users only · Revisit in Phase 4
+### D-029 — Problems are visible to signed-in users only · Accepted (resolved by D-042)
 
 - **Context:** Practice mode needs problem statements, but battles choose problems "either player hasn't seen". A public catalogue lets people pre-solve the whole set.
 - **Decision for now:** All problem endpoints require auth. Hidden tests are never served.
@@ -361,3 +421,54 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 - **Resync:** On connect, the server resends `queue:joined` or `match:found` from the current Redis state. A reload or reconnect during a ready check keeps it alive.
 - **Limits:** 30 events per 10 s per socket. HTTP rate limits don't apply to WebSocket frames.
 - **Known gap:** The ready countdown uses the client clock against the server's `expiresAt`. Phase 4 adds the server clock offset (D-009).
+
+### D-040 — Battle lifecycle with a single "finish gate" · Accepted
+- **States:** `PENDING` (countdown, problem hidden) → `ACTIVE` (from the `start` job at `startsAt`) → `FINISHED` (winner or draw) or `ABORTED` (both players gone, no result).
+- **Decision:** Every ending (first ACCEPTED, the end timer, a forfeit, abandonment) calls `finish()`. That is `UPDATE "Match" SET … WHERE id = ? AND status IN ('PENDING','ACTIVE')`, and only the caller that updates one row emits `battle:finished` and releases the players. Concurrent triggers can't produce two results or a double release.
+- **Server time decides:** a submit is accepted iff `startsAt ≤ now < endsAt`, even if the `start` job is a few ms late flipping the status. Submissions created at or after `endsAt` are ignored by the rules.
+- **Consequences:** Phase 5's rating update goes inside the winning branch of `finish()`, so it runs exactly once per match.
+
+### D-041 — Win rules as a pure function; "first" means first *submitted* · Accepted
+- **Rules:** `decideOutcome(players, submissions, {timeUp, ignorePending})`.
+  1. The first full ACCEPTED, **by submission time**, wins. An ACCEPTED is only final if the opponent has no *earlier* submission still being judged, because that one could also be ACCEPTED.
+  2. Otherwise, at time-up with nothing pending, the player with the most tests passed wins.
+  3. A tie goes to whoever reached that score first.
+  4. 0–0 (or an exact tie in time) is a draw.
+- **Why submission time:** judging order depends on queue luck and container start time. Without this, a player could lose a race they actually won.
+- **Missing verdicts:** after `endsAt` the end job re-checks every 2 s. After 60 s (`endGraceMs`) it decides as if pending submissions didn't exist. A judge `FAILED` counts as not pending, with 0 passed. A dead judge can't hold a match open forever.
+- **Tests count all tests** (samples + hidden), matching what both players see as `x/9`.
+
+### D-042 — Problem selection: difficulty by average rating, avoiding anything either player has seen · Accepted
+- **Difficulty:** below 1550 → Easy, below 1900 → Medium, otherwise Hard. New players (1500) start on Easy.
+- **"Seen"** is a `SeenProblem` row, written when a user opens a problem in practice, submits to it, or gets it in a battle. Picking prefers an unseen problem at the target difficulty, then the nearest difficulty. If both players have seen everything, it falls back to a random problem at the target difficulty.
+- **Resolves D-029:** the practice catalogue stays open, and practising a problem removes it from your battle pool, so pre-solving gains nothing.
+- **Durations:** Easy 15 min, Medium 25 min, Hard 40 min. `BATTLE_DURATION_MS` overrides all of them, for tests.
+
+### D-043 — Battle timers are BullMQ delayed jobs on API nodes; the judge only hands over verdicts · Accepted
+- **Decision:** A `battle` queue carries `start`, `end` (with an attempt counter), `judged` and `forfeit` jobs, processed by a worker inside every API node (they need Socket.IO). Job ids (`start_{id}`, `end_{id}_{n}`, `judged_{subId}`, `forfeit_{id}_{user}_{token}`) make scheduling idempotent. Jobs never need cancelling: each one re-reads state when it fires, so a `start` for a finished match or a `forfeit` for a player who came back is a no-op.
+- **Judge boundary:** the judge worker (a separate process, on separate hosts in prod) enqueues `judged` and nothing else. All rules and notifications stay in the API's `BattleService`.
+- **Verified:** a test kills the API node that created a match and starts a fresh one, and the match still ends on time.
+
+### D-044 — Presence and forfeit: away tokens plus a ground-truth presence check · Accepted
+- **Decision:**
+  - When a user's *last* socket on any node disconnects during a live match, `markAway` writes `battle:away:{match}:{user} = token` and schedules `forfeit` after `BATTLE_RECONNECT_GRACE_MS` (30 s). Opponents see `connected:false` with `graceEndsAt`.
+  - Reconnecting deletes the key, which also triggers a battle resync.
+  - When `forfeit` fires it needs the same token **and** `fetchSockets()` showing no socket for that user. If the opponent is also away and not connected, the match is ABORTED/ABANDONED; otherwise the opponent wins by FORFEIT.
+- **Why the presence check:** the E2E showed a reload can interleave so that "away" is written *after* the new socket has connected. Event order across two sockets isn't reliable, so the decision is made from actual presence when it matters. `markAway` also re-checks presence right after writing, so the opponent's UI doesn't flash "away".
+- **Graceful shutdown:** a node going down doesn't mark its users away (same as D-035). They reconnect elsewhere within the grace period.
+
+### D-045 — E2E harness: isolated full stack, real judge, shortened timings · Accepted
+- **Decision:** `playwright.config.ts` starts:
+  1. `apps/server/test/e2e/setup.ts`: database `thegrave_e2e`, migrations, judge image build, exactly **one** problem (Sum of Array, so the tests know a correct solution), and a flush of Redis DB 2.
+  2. `test/e2e/server.ts`: API + Socket.IO + battle worker + **the real Docker judge** in one process on :4100.
+  3. Vite on :5174, proxying to it (`API_PROXY_TARGET`).
+
+  Battle timings come from env vars (countdown 1.5 s, duration 20 s, grace 4 s, cooldown 1 s), so the time-out, draw and forfeit scenarios take seconds. Scenarios run serially because there is one shared queue, and `rl:*` keys are cleared between scenarios so per-IP auth limits don't trip.
+- **Why one backend process:** Playwright waits on a URL, and a separate judge worker has none. Putting them together keeps startup deterministic, and production still runs them apart.
+- **Consequences:** It needs Docker and `pnpm exec playwright install chromium`. About 1.3 min for 4 scenarios.
+
+### D-046 — Battle frontend: app-level socket, clock offset, local Monaco · Accepted
+- **One socket per signed-in app** (`RealtimeProvider` inside `ProtectedRoute`), so navigating lobby → battle doesn't drop the connection and trigger a disconnect grace. `battle:created` navigates to the battle from anywhere, including after a reload.
+- **Clock:** `serverNow() = Date.now() + offset`. The offset comes from 5 `time:sync` round trips, keeping the lowest-RTT sample (error ≤ RTT/2). It is recomputed on every connect. All countdowns (ready check, start, timer, away grace) use it, which closes the gap noted in D-039.
+- **Monaco is bundled locally** (`monaco-editor/editor/editor.api` + Python/C++ tokenizers + the editor worker), not loaded from its default CDN. There's no third-party script at runtime, it works offline and in CI, and it's CSP-friendly for Phase 7. It is lazy-loaded with the battle route.
+- **State:** the battle view is a TanStack Query entry. Socket progress events patch it, and lifecycle events refetch it, so the server's `GET /matches/:id` stays the single source of truth for resync.

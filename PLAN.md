@@ -92,7 +92,7 @@ _Beyond the plan: the lock is only an optimisation — every transition is a Lua
 
 ---
 
-## Phase 4 — Battle Round
+## Phase 4 — Battle Round ✅ (done 2026-11-18)
 
 - `Match` model + state machine: `PENDING → ACTIVE → FINISHED | ABORTED`
 - Problem pick: difficulty from the players' average rating, excluding problems either player has already seen
@@ -102,7 +102,9 @@ _Beyond the plan: the lock is only an optimisation — every transition is a Lua
 - Disconnects: 30 s reconnect grace with state resync; then forfeit
 - Per-user submission rate limit in a match (e.g. 1 per 5 s)
 
-**Exit:** E2E (Playwright, two browser contexts) for win, time-out, draw, disconnect-forfeit.
+**Exit:** E2E (Playwright, two browser contexts) for win, time-out, draw, disconnect-forfeit. ✔ (`pnpm test:e2e`, real Docker judge; plus 25 server tests for rules/lifecycle/restart-survival)
+
+_Key design: one conditional "finish gate" for every way a match can end (D-040); "first ACCEPTED" by submission time, not judging order (D-041); timers are self-checking BullMQ jobs (D-043); forfeit decided by actual presence, not event order (D-044)._
 
 ---
 
