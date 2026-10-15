@@ -164,6 +164,49 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 - **Observed flake:** `problems.test.ts` (30 Python references, 3 concurrent containers) failed 2 problems with TLE when run straight after the battle suite, with machine load average around 8.8 on 8 cores and another `pnpm dev` running. It passed 32/32 when rerun alone. CI should run it with low container concurrency (Phase 7).
 - **Not done:** Glicko-2 rating (Phase 5 hooks into `finish()`), match history and profile (Phase 5), lobby and battle polish (Phase 6). The Monaco chunk is 2.7 MB (700 KB gzipped), lazy-loaded; Phase 7 can trim it. Vite's dev proxy logs harmless `EPIPE` errors when a WebSocket closes during a reload.
 
+### 2026-11-18 — Phase 5: Rating & Leaderboard
+
+- **Approach:**
+  - Rating commits **in the same transaction** as Phase 4's finish gate, so a match can never be finished but unrated (D-048).
+  - Inactivity decay uses the fact that Glicko-2's idle RD inflation is *additive in time*. A lazy calculation at match time and a periodic materialising job then agree exactly, whatever the cadence (D-049).
+  - The leaderboard is derived state. It is rebuilt off to the side and swapped in with a version compare-and-swap, so a rebuild never shows an empty board and never overwrites a newer rating (D-050).
+- `src/rating/glicko2.ts`: Glicko-2 as pure functions, following Glickman's paper step by step (Illinois algorithm for σ'), plus `inflateRd`. `rateWithTrace` exposes every intermediate value for the paper test.
+- `policy.ts`: rating period of 1 day, leaderboard RD ≤ 200, provisional above 110, and `effectiveRd`.
+- `apply.ts`: rating a match inside a transaction (`ratedAt` gate, `FOR UPDATE` row locks in id order, simultaneous update, `RatingHistory` rows).
+- `leaderboard.ts`: Redis ZSET with competition ranks, page and rank lookups, CAS rebuild, and the decay SQL.
+- `maintenance.ts`: a BullMQ job scheduler (`rd-decay`, hourly: decay then rebuild), plus a rebuild on boot.
+- Prisma:
+  - `User.rdUpdatedAt`, `User.ratedGames` (+ index)
+  - `Match.ratedAt`
+  - `RatingHistory` (before/after rating, RD and volatility, delta, outcome, opponent, `@@unique(matchId, userId)`)
+  - enum `GameOutcome`
+  - Migration `ratings`.
+- `BattleService.finish()` is now one `$transaction`: status gate → `applyMatchRating` for FINISHED, so ABORTED stays unrated. After commit it updates the leaderboard incrementally and sends `battle:finished` with `ratingChanges`. `GET /matches/:id` includes them too.
+- API, all signed-in only:
+  - `GET /api/leaderboard?offset&limit` returns entries and `me`.
+  - `GET /api/users/:username` returns the profile: rating, effective RD, provisional flag, rank, W/L/D, and a graph of up to 500 points.
+  - `GET /api/users/:username/matches?cursor&limit` is keyset-paginated history.
+- Web:
+  - `AppShell` navigation (Play, Leaderboard, Profile).
+  - `LeaderboardPage`: paged, with your rank and your row highlighted.
+  - `ProfilePage`: stat tiles, rating chart, match history with "Load more".
+  - The battle result shows `before → after (±delta)`.
+  - `battle:finished` invalidates the me, profile and leaderboard queries.
+- **On "the paper's worked example":** a full-precision implementation gives r' = 1464.0507, but the paper prints 1464.06. Glickman carries *rounded* intermediate values from step to step (μ' = −0.2069 → 1464.06). So the test checks **every intermediate quantity at the paper's printed precision**: μ, φ, g(φj), E, v, Δ, σ', φ*, φ', μ', r', RD'. It also shows that the paper's own rounded g and E, fed through our v and Δ formulas, reproduce its printed 1.7785 and −0.4834 exactly. That is stronger than a single end-to-end tolerance, and it pins down why the last digits differ.
+- **Fixed along the way:**
+  - `RatingChart`'s `ResizeObserver` watched the element present on mount, and that element is swapped when data arrives. It now uses a callback ref.
+  - Rendering the profile showed that the chart's area wash implied a quantity measured from a non-zero baseline, so it was removed. It also showed match-history rows wrapping badly at 390 px, so they now use a two-line layout.
+  - My test assumptions: a population too small for a fixed index, and assuming which seeded player ranks first.
+  - Phase 4 tests that used `toEqual` on results were relaxed to `toMatchObject`, now that results carry `ratingChanges`, and the win test asserts the symmetric ±delta.
+- **Verified:**
+  - `pnpm --filter @thegrave/server test` passes 142/142:
+    - **14 Glicko-2 tests** against the paper (the exit criterion), plus properties: symmetric outcomes, newcomers moving fast and veterans slowly, upsets, RD shrinking, step 6 with no games, and decay additivity with the cap.
+    - **14 rating/leaderboard integration tests**: rating in the finish transaction, 8 concurrent finishes plus a replay rating exactly once, draws, ABORTED unrated, idle-inflated RD at rating time, decay matching the lazy formula and idempotent, split decay equalling a single decay.
+    - **The leaderboard matching Postgres exactly** (ids *and* scores, in order) after a rebuild from a Redis corrupted with phantom, missing and wrong-score entries, over 400 random users with ties. This is the exit criterion.
+    - Pages concatenating to the full board with competition ranks, the CAS refusing a stale swap (2 attempts), enter and leave thresholds, rebuild on boot with exactly one scheduler across two "nodes", and profile W/L/D, graph and 3-page keyset history.
+  - `pnpm test:e2e` passes 5/5: the 4 battle scenarios, now also asserting the ±rating change on the result screen, and a new **rating E2E**. It logs in as a seeded 30-game veteran and checks the leaderboard (descending order, "You are #1 of 5", the highlighted row), the profile (30 games, graph with hover tooltip, table view of 31 rows, history paginating 15 → 30), and a 390 px phone viewport with no horizontal scroll. Screenshots were inspected.
+  - Typecheck, lint and the web build are green.
+
 ---
 
 ## Decisions
@@ -472,3 +515,51 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 - **Clock:** `serverNow() = Date.now() + offset`. The offset comes from 5 `time:sync` round trips, keeping the lowest-RTT sample (error ≤ RTT/2). It is recomputed on every connect. All countdowns (ready check, start, timer, away grace) use it, which closes the gap noted in D-039.
 - **Monaco is bundled locally** (`monaco-editor/editor/editor.api` + Python/C++ tokenizers + the editor worker), not loaded from its default CDN. There's no third-party script at runtime, it works offline and in CI, and it's CSP-friendly for Phase 7. It is lazy-loaded with the battle route.
 - **State:** the battle view is a TanStack Query entry. Socket progress events patch it, and lifecycle events refetch it, so the server's `GET /matches/:id` stays the single source of truth for resync.
+
+### D-047 — Each game is rated on its own; idle time inflates RD by real elapsed time · Accepted
+- **Context:** Glicko-2 was designed for batches ("rating periods" of roughly 10–15 games). In a 1v1 app, players want their rating to move after every game, and step 6 of the algorithm adds one period of uncertainty per update.
+- **Decision:** Each finished match is its own update, called with `periodFraction: 0`. Uncertainty from idle time is added separately and exactly: `RD_now = √(RD² + σ²·t)`, with `t` = elapsed days since `rdUpdatedAt` (rating period = 1 day). This is applied to *both* players right before the update. τ = 0.5. New players start at 1500 / 350 / 0.06.
+- **Alternatives:** Batching per day or week means ratings only change at period boundaries, which feels broken in a competitive app. Keeping step 6 per game inflates RD after every game for rapid players, which is wrong. Elo: see D-010.
+- **Consequences:** The numbers: a newcomer reaches RD ≈ 190 after 3 games against established players, and a veteran at RD 60 goes provisional (> 110) after about 79 idle days.
+
+### D-048 — Rating is part of the finish transaction; idempotent per match · Accepted
+- **Decision:** `finish()` = `BEGIN; UPDATE Match … WHERE status IN (live)` (Phase 4 gate) → `UPDATE Match SET ratedAt WHERE ratedAt IS NULL` (rating gate) → `SELECT … FOR UPDATE` on both users **in id order** (no deadlocks) → Glicko-2 using both players' *pre-match* values (a simultaneous update) → update users + 2 `RatingHistory` rows → `COMMIT`. `@@unique(matchId, userId)` on `RatingHistory` is a backstop.
+- **Why in the same transaction:** a separate "rate later" job would need an outbox to survive a crash between finishing and rating. Committing together makes FINISHED-but-unrated impossible, and makes "exactly once" a property of the database.
+- **Display:** the exact float is stored, and values are rounded only for display. `delta` shown = round(after) − round(before), so `before + delta = after` on screen.
+- ABORTED matches are unrated. FORFEIT is rated as a normal loss.
+
+### D-049 — Inactivity decay: lazy and materialised give identical results · Accepted
+- **Insight:** idle inflation `φ² + σ²·t` is additive in `t`. Inflating 25 days then 15 equals inflating 40, and a test proves it.
+- **Decision:**
+  - The source of truth is `(ratingDev, rdUpdatedAt)`, and everything that needs "RD now" uses `effectiveRd`.
+  - An hourly BullMQ job scheduler (`rd-decay`, upserted by id, so one schedule however many API nodes start it) runs **one SQL statement** that writes the inflated RD and sets `rdUpdatedAt = now()` for everyone idle for over an hour, then reconciles the leaderboard.
+  - The SQL formula mirrors `effectiveRd`, and a test checks they agree to 3 decimals.
+- **Why materialise at all, if lazy is exact?** So the leaderboard and any SQL query (eligibility, analytics) see current RD without per-row maths in the application.
+- **Consequences:** A missed or late job changes nothing about correctness, only how fresh the stored column is.
+
+### D-050 — Leaderboard: derived Redis ZSET, competition ranks, CAS-swapped rebuilds · Accepted
+- **Membership:** at least 1 rated game and effective RD ≤ 200. That means about 3 games in, or about 11 months idle out. Players with RD > 110 are shown as provisional ("1523?").
+- **Ranks:** competition ranking, `1 + ZCOUNT(score, +inf exclusive)`, so ties share a rank (1, 2, 2, 4). A page needs only one `ZCOUNT`; after that the rank changes exactly where the score changes. Scores are the exact floats, so Redis order equals Postgres `ORDER BY rating DESC, id DESC`.
+- **Updates:**
+  - Incremental `ZADD`/`ZREM` + `INCR lb:version` in one `MULTI` after each rating commit. If it fails, the next rebuild repairs it.
+  - Rebuild: read Postgres → build into `lb:rating:build:{uuid}` → a Lua script `RENAME`s it over the live key **only if `lb:version` didn't change since the read**; otherwise it discards and retries.
+  - The rebuild runs on boot and hourly.
+- **Why CAS:** a plain rebuild can read the DB just before a match commits and then swap its older snapshot over the newer `ZADD`. A test forces exactly that interleaving through a `beforeSwap` seam: the first swap is refused, and the second is built from fresh data.
+- **Why build-and-rename:** readers never see an empty or partial board, as they would with `DEL` + refill.
+
+### D-051 — Profile and history API · Accepted
+- W/L/D come from `groupBy(outcome)` on `RatingHistory`. The rating graph is the latest 500 points, starting from the pre-game rating. Match history is **keyset-paginated** with an opaque `(createdAt, id)` cursor, so it's stable while new games are added and doesn't use OFFSET.
+- Profiles are visible to signed-in users, the same as problems (D-029).
+
+### D-052 — Rating chart follows the dataviz procedure · Accepted
+- **Form:** one series over games played, as a line. There's no legend because the title names it. The x-axis is the game number, not time, so a burst of games on one day isn't squashed.
+- **Colour:** the brand's emerald-500 (`#10b981`) **failed** the dark-mode lightness band (L 0.70 vs 0.48–0.67) in `validate_palette.js`. The chart uses `#10a87a`, the nearest step of the same hue that passes every check (band, chroma, ≥ 3:1 on the zinc-900 card). All text uses text tokens, never the series colour.
+- **Marks:** 2px line, an end dot (r = 4) with a 2px surface ring, a direct label on the endpoint only, solid hairline grid one step off the surface, and clean ticks.
+- **No area wash:** the y-axis can't start at 0 for ratings, so a fill would imply a magnitude from an arbitrary floor. I removed it after looking at the render.
+- **Interaction and accessibility:**
+  - a crosshair snapping to the nearest game across the whole plot (the hit target is the plot, not the 2px line)
+  - a tooltip with the value first, then the context
+  - keyboard focus with ←/→/Home/End
+  - `role="img"` with a summary label
+  - a "Show as table" view of every point
+  - the width tracked with a `ResizeObserver` (callback ref), checked at 390 px.

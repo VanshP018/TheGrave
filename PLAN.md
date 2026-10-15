@@ -108,7 +108,7 @@ _Key design: one conditional "finish gate" for every way a match can end (D-040)
 
 ---
 
-## Phase 5 — Rating & Leaderboard
+## Phase 5 — Rating & Leaderboard ✅ (done 2026-11-18)
 
 - Glicko-2 update in one DB transaction when a match finishes; idempotent per match id
 - `RatingHistory` rows (before/after, delta, matchId)
@@ -116,7 +116,9 @@ _Key design: one conditional "finish gate" for every way a match can end (D-040)
 - Rating deviation decay for inactive players (periodic job)
 - Profile page: rating graph, match history, W/L/D
 
-**Exit:** unit tests against the Glicko-2 paper's worked example; leaderboard consistent with DB after a rebuild.
+**Exit:** unit tests against the Glicko-2 paper's worked example; leaderboard consistent with DB after a rebuild. ✔ (`test/glicko2.test.ts` checks every intermediate step of the paper; `test/rating.test.ts` rebuilds from a corrupted Redis and matches Postgres exactly; rating E2E in `e2e/rating.spec.ts`)
+
+_Key design: rating commits inside the Phase 4 finish transaction (D-048); idle RD inflation is additive in time, so lazy and periodic decay agree exactly (D-049); rebuilds swap in atomically and only if no rating changed meanwhile (D-050)._
 
 ---
 
