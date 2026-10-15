@@ -1,4 +1,5 @@
 import type { Language, ProblemDetail, SubmissionStatus, Verdict } from './judge.js';
+import type { RatingChange } from './rating.js';
 
 export type MatchStatus = 'PENDING' | 'ACTIVE' | 'FINISHED' | 'ABORTED';
 export type MatchEndReason = 'SOLVED' | 'TIMEOUT' | 'FORFEIT' | 'ABANDONED';
@@ -23,6 +24,8 @@ export interface MatchResult {
   /** null with status FINISHED = draw. */
   winnerId: string | null;
   endReason: MatchEndReason;
+  /** Present for rated (FINISHED) matches. */
+  ratingChanges?: RatingChange[];
 }
 
 export interface MySubmission {
