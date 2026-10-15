@@ -11,6 +11,8 @@ import { enqueueSubmission } from '../judge/queue.js';
 import { prisma } from '../lib/prisma.js';
 import { redis } from '../lib/redis.js';
 import type { ConfirmedMatch, Matchmaker, Notifier } from '../matchmaking/matchmaker.js';
+import { applyMatchRating, toRatingChange } from '../rating/apply.js';
+import type { Leaderboard } from '../rating/leaderboard.js';
 import { markSeen, toProblemDetail } from '../modules/problems/detail.js';
 import { decideOutcome, type Outcome } from './outcome.js';
 import { difficultyFor, pickProblem } from './problem-pick.js';
@@ -70,6 +72,7 @@ export class BattleService {
   constructor(
     private readonly notify: BattleNotifier,
     private readonly mm: Matchmaker,
+    private readonly leaderboard: Leaderboard,
     opts: Partial<BattleOptions> = {},
   ) {
     this.opts = { ...DEFAULT_BATTLE_OPTIONS, ...opts };
@@ -223,25 +226,41 @@ export class BattleService {
     return outcome.kind;
   }
 
-  /** The single exit from a live match. Returns false if someone else already finished it. */
+  /**
+   * The single exit from a live match. The status change and the Glicko-2 update commit together, so a
+   * match can never be FINISHED but unrated (decision.md D-048). Returns false if someone else finished it.
+   */
   async finish(matchId: string, result: MatchResult): Promise<boolean> {
-    const { count } = await prisma.match.updateMany({
-      where: { id: matchId, status: { in: [...LIVE] } },
-      data: {
-        status: result.status,
-        winnerId: result.winnerId,
-        endReason: result.endReason,
-        finishedAt: new Date(),
-      },
+    const outcome = await prisma.$transaction(async (tx) => {
+      const { count } = await tx.match.updateMany({
+        where: { id: matchId, status: { in: [...LIVE] } },
+        data: {
+          status: result.status,
+          winnerId: result.winnerId,
+          endReason: result.endReason,
+          finishedAt: new Date(),
+        },
+      });
+      if (!count) return null;
+      const ids = (
+        await tx.matchPlayer.findMany({ where: { matchId }, select: { userId: true } })
+      ).map((p) => p.userId) as [string, string];
+      const changes =
+        result.status === 'FINISHED'
+          ? await applyMatchRating(tx, matchId, ids, result.winnerId)
+          : [];
+      return { ids, changes };
     });
-    if (!count) return false;
-    const ids = (
-      await prisma.matchPlayer.findMany({ where: { matchId }, select: { userId: true } })
-    ).map((p) => p.userId);
-    await this.mm.release(matchId, ids);
-    await redis.del(...ids.map((u) => awayKey(matchId, u)));
-    // Phase 5 hooks the Glicko-2 rating update in here.
-    this.notify.toRoom(matchRoom(matchId), 'battle:finished', { matchId, result });
+    if (!outcome) return false;
+
+    await this.mm.release(matchId, outcome.ids);
+    await redis.del(...outcome.ids.map((u) => awayKey(matchId, u)));
+    // Derived state, updated after commit; a failure here is repaired by the next rebuild (D-050).
+    await this.leaderboard.applyChanges(outcome.changes).catch(() => {});
+    this.notify.toRoom(matchRoom(matchId), 'battle:finished', {
+      matchId,
+      result: { ...result, ratingChanges: outcome.changes.map(toRatingChange) },
+    });
     return true;
   }
 
@@ -366,7 +385,19 @@ export class BattleService {
       submitCooldownMs: this.opts.submitCooldownMs,
       result:
         m.status === 'FINISHED' || m.status === 'ABORTED'
-          ? { status: m.status, winnerId: m.winnerId, endReason: m.endReason! }
+          ? {
+              status: m.status,
+              winnerId: m.winnerId,
+              endReason: m.endReason!,
+              ratingChanges: (await prisma.ratingHistory.findMany({ where: { matchId } })).map(
+                (h) => ({
+                  userId: h.userId,
+                  before: Math.round(h.ratingBefore),
+                  after: Math.round(h.ratingAfter),
+                  delta: Math.round(h.ratingAfter) - Math.round(h.ratingBefore),
+                }),
+              ),
+            }
           : null,
     };
   }

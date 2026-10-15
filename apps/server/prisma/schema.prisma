@@ -7,8 +7,6 @@ datasource db {
   provider = "postgresql"
 }
 
-// RatingHistory is added in Phase 5 (see PLAN.md).
-
 model User {
   id           String   @id @default(uuid(7)) @db.Uuid
   username     String   @unique
@@ -18,6 +16,9 @@ model User {
   rating       Float    @default(1500)
   ratingDev    Float    @default(350)
   volatility   Float    @default(0.06)
+  // ratingDev is exact as of this instant; idle inflation since then is applied lazily (decision.md D-047)
+  rdUpdatedAt  DateTime @default(now())
+  ratedGames   Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -25,6 +26,9 @@ model User {
   submissions   Submission[]
   matches       MatchPlayer[]
   seenProblems  SeenProblem[]
+  ratingHistory RatingHistory[]
+
+  @@index([ratedGames, rating])
 }
 
 model RefreshToken {
@@ -162,10 +166,13 @@ model Match {
   // null on FINISHED means a draw
   winnerId   String?         @db.Uuid
   endReason  MatchEndReason?
+  // Set in the same transaction that applies the rating change: the idempotency gate (D-048)
+  ratedAt    DateTime?
   createdAt  DateTime        @default(now())
 
-  players     MatchPlayer[]
-  submissions Submission[]
+  players       MatchPlayer[]
+  submissions   Submission[]
+  ratingChanges RatingHistory[]
 
   @@index([status])
 }
@@ -192,4 +199,34 @@ model SeenProblem {
 
   @@id([userId, problemId])
   @@index([problemId])
+}
+
+enum GameOutcome {
+  WIN
+  LOSS
+  DRAW
+}
+
+model RatingHistory {
+  id               String      @id @default(uuid(7)) @db.Uuid
+  userId           String      @db.Uuid
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchId          String      @db.Uuid
+  match            Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  opponentId       String      @db.Uuid
+  outcome          GameOutcome
+  ratingBefore     Float
+  ratingAfter      Float
+  delta            Float
+  // RD as used for the update (already inflated for idle time) and after it
+  rdBefore         Float
+  rdAfter          Float
+  volatilityBefore Float
+  volatilityAfter  Float
+  opponentRating   Float
+  createdAt        DateTime    @default(now())
+
+  // Backstop for idempotency: one rating change per player per match
+  @@unique([matchId, userId])
+  @@index([userId, createdAt])
 }

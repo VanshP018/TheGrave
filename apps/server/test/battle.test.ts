@@ -204,8 +204,14 @@ describe('battle lifecycle', () => {
     expect((await submit(matchId, a, 'AC')).statusCode).toBe(202);
     await judged;
     const [ra, rb] = await done;
-    expect(ra.result).toEqual({ status: 'FINISHED', winnerId: a.id, endReason: 'SOLVED' });
+    expect(ra.result).toMatchObject({ status: 'FINISHED', winnerId: a.id, endReason: 'SOLVED' });
     expect(rb.result).toEqual(ra.result);
+    // Rated in the finish transaction: two new players, so a large symmetric swing (Phase 5).
+    const changes = ra.result.ratingChanges!;
+    expect(changes.find((c) => c.userId === a.id)!.delta).toBeGreaterThan(100);
+    expect(changes.find((c) => c.userId === b.id)!.delta).toBe(
+      -changes.find((c) => c.userId === a.id)!.delta,
+    );
 
     // The opponent only ever sees progress, never code.
     const seen: PlayerProgress = (await progress).player;
@@ -268,14 +274,14 @@ describe('time-out', () => {
     await submit(matchId, a, 'PASS:3');
     await submit(matchId, b, 'PASS:5');
     const { result } = await done;
-    expect(result).toEqual({ status: 'FINISHED', winnerId: b.id, endReason: 'TIMEOUT' });
+    expect(result).toMatchObject({ status: 'FINISHED', winnerId: b.id, endReason: 'TIMEOUT' });
     expect((await view(matchId, a)).players.find((p) => p.userId === b.id)?.bestPassed).toBe(5);
   });
 
   it('nobody scoring is a draw', async () => {
     const { a, matchId } = await matchUp();
     const { result } = await finished(a, matchId);
-    expect(result).toEqual({ status: 'FINISHED', winnerId: null, endReason: 'TIMEOUT' });
+    expect(result).toMatchObject({ status: 'FINISHED', winnerId: null, endReason: 'TIMEOUT' });
   });
 
   it('submissions after endsAt are refused', async () => {
@@ -297,7 +303,7 @@ describe('disconnects', () => {
     const done = finished(a, matchId);
     b.socket.disconnect();
     expect((await away).player.graceEndsAt).toBeGreaterThan(Date.now());
-    expect((await done).result).toEqual({
+    expect((await done).result).toMatchObject({
       status: 'FINISHED',
       winnerId: a.id,
       endReason: 'FORFEIT',

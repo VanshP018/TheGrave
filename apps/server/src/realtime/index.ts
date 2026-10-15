@@ -20,6 +20,9 @@ import {
   type MatchmakerOptions,
 } from '../matchmaking/matchmaker.js';
 import { matchRoutes } from '../modules/matches/routes.js';
+import { userRoutes } from '../modules/users/routes.js';
+import { Leaderboard } from '../rating/leaderboard.js';
+import { startRatingMaintenance } from '../rating/maintenance.js';
 
 interface SocketData {
   user: { id: string; username: string };
@@ -98,9 +101,16 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     },
     opts.matchmaker,
   );
-  const battle = new BattleService(notifier, mm, { ...battleOptionsFromConfig(), ...opts.battle });
+  const leaderboard = new Leaderboard(redis);
+  const battle = new BattleService(notifier, mm, leaderboard, {
+    ...battleOptionsFromConfig(),
+    ...opts.battle,
+  });
   const battleWorker = createBattleWorker(battle);
+  const maintenance = startRatingMaintenance(leaderboard, { log: app.log });
+  maintenance.catch((err) => app.log.error({ err }, 'rating maintenance failed to start'));
   void app.register(matchRoutes, { prefix: '/api', battle });
+  void app.register(userRoutes, { prefix: '/api', leaderboard });
 
   // Handshake auth: the access JWT travels in the Socket.IO `auth` payload, never in the URL.
   io.use((socket, next) => {
@@ -178,13 +188,14 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     shuttingDown = true;
     await mm.stop();
     await battleWorker.close();
+    await maintenance.then((m) => m.close()).catch(() => {});
     io.local.disconnectSockets(true);
   });
   app.addHook('onClose', async () => {
     await Promise.allSettled([pub.quit(), sub.quit()]);
   });
 
-  return { io, matchmaker: mm, battle };
+  return { io, matchmaker: mm, battle, leaderboard, maintenance };
 }
 
 const fail = (code: AckError, message: string): Ack => ({ ok: false, code, message });

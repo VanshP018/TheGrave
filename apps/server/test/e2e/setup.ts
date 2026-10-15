@@ -35,6 +35,97 @@ await prisma.problem.create({
     testCases: { create: buildTestCases(def) },
   },
 });
+
+// A veteran with 30 rated games (played through the real Glicko-2 code) and four ranked rivals,
+// so the leaderboard and profile have realistic data. The server rebuilds the leaderboard on boot.
+const argon2 = (await import('argon2')).default;
+const { rate } = await import('../../src/rating/glicko2.js');
+const passwordHash = await argon2.hash('correct-horse-battery', { type: argon2.argon2id });
+const DAY = 24 * 60 * 60 * 1000;
+const rivals = await Promise.all(
+  [1720, 1650, 1580, 1490].map((rating, i) =>
+    prisma.user.create({
+      data: {
+        username: `rival${i}`,
+        email: `rival${i}@e2e.test`,
+        passwordHash,
+        rating,
+        ratingDev: 70,
+        ratedGames: 20,
+      },
+    }),
+  ),
+);
+const vet = await prisma.user.create({
+  data: {
+    username: 'veteran',
+    email: 'veteran@e2e.test',
+    passwordHash,
+    createdAt: new Date(Date.now() - 40 * DAY),
+  },
+});
+const problem = await prisma.problem.findFirstOrThrow();
+let r = { rating: 1500, rd: 350, volatility: 0.06 };
+let seed = 3;
+const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+for (let i = 0; i < 30; i++) {
+  const opp = rivals[i % rivals.length]!;
+  const score = rand() < 0.6 ? 1 : rand() < 0.8 ? 0 : 0.5;
+  const after = rate(
+    r,
+    [{ opponent: { rating: opp.rating, rd: opp.ratingDev }, score: score as 0 | 0.5 | 1 }],
+    {
+      periodFraction: 0,
+    },
+  );
+  const at = new Date(Date.now() - (30 - i) * DAY);
+  const m = await prisma.match.create({
+    data: {
+      problemId: problem.id,
+      status: 'FINISHED',
+      startsAt: at,
+      endsAt: at,
+      finishedAt: at,
+      ratedAt: at,
+      winnerId: score === 1 ? vet.id : score === 0 ? opp.id : null,
+      endReason: score === 0.5 ? 'TIMEOUT' : 'SOLVED',
+      players: {
+        create: [
+          { userId: vet.id, ratingBefore: r.rating },
+          { userId: opp.id, ratingBefore: opp.rating },
+        ],
+      },
+    },
+  });
+  await prisma.ratingHistory.create({
+    data: {
+      userId: vet.id,
+      matchId: m.id,
+      opponentId: opp.id,
+      outcome: score === 1 ? 'WIN' : score === 0 ? 'LOSS' : 'DRAW',
+      ratingBefore: r.rating,
+      ratingAfter: after.rating,
+      delta: after.rating - r.rating,
+      rdBefore: r.rd,
+      rdAfter: after.rd,
+      volatilityBefore: r.volatility,
+      volatilityAfter: after.volatility,
+      opponentRating: opp.rating,
+      createdAt: at,
+    },
+  });
+  r = after;
+}
+await prisma.user.update({
+  where: { id: vet.id },
+  data: {
+    rating: r.rating,
+    ratingDev: r.rd,
+    volatility: r.volatility,
+    ratedGames: 30,
+    rdUpdatedAt: new Date(Date.now() - DAY),
+  },
+});
 await prisma.$disconnect();
 
 const redis = new Redis(process.env.REDIS_URL!);
