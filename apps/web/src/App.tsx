@@ -3,7 +3,9 @@ import { Navigate, Route, Routes } from 'react-router';
 import { FullScreenMessage, GuestRoute, ProtectedRoute } from './components/ProtectedRoute';
 import { refreshSession } from './lib/api';
 import { HomePage } from './pages/HomePage';
+import { LeaderboardPage } from './pages/LeaderboardPage';
 import { LoginPage } from './pages/LoginPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { RegisterPage } from './pages/RegisterPage';
 
 // Monaco is large: only load it when a battle opens.
@@ -23,6 +25,8 @@ export default function App() {
       </Route>
       <Route element={<ProtectedRoute />}>
         <Route path="/" element={<HomePage />} />
+        <Route path="/leaderboard" element={<LeaderboardPage />} />
+        <Route path="/u/:username" element={<ProfilePage />} />
         <Route
           path="/battle/:id"
           element={

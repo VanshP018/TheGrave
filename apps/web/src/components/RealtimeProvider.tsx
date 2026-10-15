@@ -65,7 +65,12 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         navigate(`/battle/${matchId}`);
     });
     s.on('battle:started', ({ matchId }) => refetch(matchId));
-    s.on('battle:finished', ({ matchId }) => refetch(matchId));
+    s.on('battle:finished', ({ matchId }) => {
+      refetch(matchId);
+      // Ratings just changed: anything showing them is stale.
+      for (const key of ['me', 'profile', 'leaderboard'])
+        void qc.invalidateQueries({ queryKey: [key] });
+    });
     s.on('submission:judged', ({ matchId }) => refetch(matchId));
     s.on('battle:progress', ({ matchId, player }) =>
       qc.setQueryData<BattleView>(

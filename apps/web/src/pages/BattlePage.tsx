@@ -389,6 +389,20 @@ function ResultOverlay({
         <p className="mt-2 text-sm text-zinc-400" data-testid="battle-result-reason">
           vs {opponent.username}: {reason}
         </p>
+        {(() => {
+          const mine = result.ratingChanges?.find((c) => c.userId === me);
+          return mine ? (
+            <p className="mt-4 font-mono text-lg" data-testid="rating-change">
+              {mine.before} → <span className="font-semibold text-zinc-100">{mine.after}</span>{' '}
+              <span className="text-zinc-400">
+                ({mine.delta > 0 ? '+' : ''}
+                {mine.delta})
+              </span>
+            </p>
+          ) : result.status === 'ABORTED' ? (
+            <p className="mt-4 text-sm text-zinc-500">Unrated: ratings are unchanged.</p>
+          ) : null;
+        })()}
         <Link
           to="/"
           className="mt-6 inline-block rounded-md bg-emerald-600 px-4 py-2 font-semibold hover:bg-emerald-500"
