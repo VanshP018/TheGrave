@@ -71,6 +71,10 @@ test('win: first full ACCEPTED wins, and a reload mid-battle resyncs', async ({ 
   await expect(result(a)).toHaveText('You won!');
   await expect(reason(a)).toContainText('first to solve every test');
   await expect(result(b)).toHaveText('You lost');
+  // Rated in the finish transaction: two new players swing by the same amount in opposite directions.
+  await expect(a.getByTestId('rating-change')).toContainText('1500 →');
+  await expect(a.getByTestId('rating-change')).toContainText('(+');
+  await expect(b.getByTestId('rating-change')).toContainText('(-');
   // The loser saw progress only: the winner's score, never their code.
   await expect(b.getByTestId('opponent-progress-passed')).toHaveText('9/9 tests');
   await expect(b.getByText(SOLVES)).toHaveCount(0);
