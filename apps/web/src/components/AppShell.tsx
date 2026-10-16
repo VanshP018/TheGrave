@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { NavLink, useNavigate } from 'react-router';
+import { Link, NavLink, useNavigate } from 'react-router';
 import { authApi } from '../lib/api';
 import { useAuth } from '../stores/auth';
 
@@ -22,8 +22,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3 sm:px-6">
         <nav className="flex items-center gap-1">
-          <span className="mr-3 font-bold tracking-tight">theGrave</span>
-          <NavLink to="/" end className={linkClass}>
+          <Link to="/" className="mr-3 font-bold tracking-tight">
+            theGrave
+          </Link>
+          <NavLink to="/play" className={linkClass}>
             Play
           </NavLink>
           <NavLink to="/leaderboard" className={linkClass}>

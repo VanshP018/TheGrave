@@ -131,7 +131,7 @@ export default function BattlePage() {
   return (
     <main className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
-        <Link to="/" className="font-bold tracking-tight">
+        <Link to="/play" className="font-bold tracking-tight">
           theGrave
         </Link>
         <div className="font-mono text-2xl tabular-nums" data-testid="battle-timer">
@@ -404,7 +404,7 @@ function ResultOverlay({
           ) : null;
         })()}
         <Link
-          to="/"
+          to="/play"
           className="mt-6 inline-block rounded-md bg-emerald-600 px-4 py-2 font-semibold hover:bg-emerald-500"
         >
           Back to lobby

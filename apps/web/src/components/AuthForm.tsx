@@ -25,7 +25,7 @@ export function AuthForm({ title, submitLabel, fields, submit, footer }: Props) 
   const setSession = useAuth((s) => s.setSession);
   const navigate = useNavigate();
   const from =
-    (useLocation().state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/';
+    (useLocation().state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/play';
 
   const mutation = useMutation({
     mutationFn: () => submit(values),

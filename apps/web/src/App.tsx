@@ -10,6 +10,8 @@ import { RegisterPage } from './pages/RegisterPage';
 
 // Monaco is large: only load it when a battle opens.
 const BattlePage = lazy(() => import('./pages/BattlePage'));
+// framer-motion + the Spline loader stay out of the app bundle for signed-in pages.
+const LandingPage = lazy(() => import('./pages/LandingPage'));
 
 export default function App() {
   // Silent refresh on boot: the access token lives in memory, so every page load restores it from the cookie.
@@ -19,12 +21,20 @@ export default function App() {
 
   return (
     <Routes>
+      <Route
+        path="/"
+        element={
+          <Suspense fallback={<div className="min-h-screen bg-hero-bg" />}>
+            <LandingPage />
+          </Suspense>
+        }
+      />
       <Route element={<GuestRoute />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
       </Route>
       <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/play" element={<HomePage />} />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/u/:username" element={<ProfilePage />} />
         <Route

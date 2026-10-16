@@ -18,7 +18,7 @@ export function ProtectedRoute() {
 export function GuestRoute() {
   const status = useAuth((s) => s.status);
   if (status === 'loading') return <FullScreenMessage>Loading…</FullScreenMessage>;
-  if (status === 'authenticated') return <Navigate to="/" replace />;
+  if (status === 'authenticated') return <Navigate to="/play" replace />;
   return <Outlet />;
 }
 
