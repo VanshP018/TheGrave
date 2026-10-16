@@ -13,7 +13,7 @@ pnpm --filter @thegrave/server db:migrate
 pnpm --filter @thegrave/server db:generate     # Prisma 7: migrate no longer generates the client
 pnpm --filter @thegrave/server db:seed         # 30 problems with hidden tests
 pnpm --filter @thegrave/server judge:build     # sandbox image for the code judge
-pnpm dev                                       # api :4000, judge worker, web :5173
+pnpm dev                                       # api :4000, judge worker, web :5173 (landing at /, lobby at /play)
 pnpm test                                      # integration tests (needs infra:up; uses thegrave_test DB)
 pnpm exec playwright install chromium          # once
 pnpm test:e2e                                  # two-browser battle E2E (isolated thegrave_e2e DB, real judge)

@@ -207,6 +207,27 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
   - `pnpm test:e2e` passes 5/5: the 4 battle scenarios, now also asserting the ±rating change on the result screen, and a new **rating E2E**. It logs in as a seeded 30-game veteran and checks the leaderboard (descending order, "You are #1 of 5", the highlighted row), the profile (30 games, graph with hover tooltip, table view of 31 rows, history paginating 15 → 30), and a 390 px phone viewport with no horizontal scroll. Screenshots were inspected.
   - Typecheck, lint and the web build are green.
 
+### 2026-11-18 — Landing page (black + grey + gold)
+
+- **Tooling:**
+  - Installed `framer-motion` 14.14, `@splinetool/react-spline` 4.2 and `@splinetool/runtime` 2.0.190 in `apps/web`.
+  - Installed the third-party `ui-ux-pro-max` skill at **user level** (`~/.claude/skills/`, not in the repo, per D-016), after reading it: stdlib-only Python search over bundled CSVs, no network or subprocess calls. Only that skill was installed, not the six others its repo bundles.
+  - Its design-system query gave a feature-showcase pattern and a 3D/immersive style for gaming, plus: respect reduced motion (high severity), 1–2 animated elements per view, 44 px touch targets, no emoji icons. Its default palette (purple/rose) was overridden by the requested black/grey/gold, and its gold palette results were light-mode only.
+- **Routes:** `/` is now the public landing page (lazy chunk), and the lobby moved to `/play`. Login and register redirects, `GuestRoute`, the AppShell nav and the battle page's "back" links all point to `/play`.
+- **Page:** `pages/LandingPage.tsx` and `components/landing/*`.
+  - Navbar: fixed and transparent, gaining a blurred backdrop on scroll.
+  - Hero: full-screen, copy bottom-left over an interactive Spline 3D scene. It uses the reference's staggered fade-up + blur entrance via framer-motion variants with the same `cubic-bezier(0.16, 1, 0.3, 1)` timing, and the reference's fluid `clamp()` type.
+  - Sections: How it works (a gold rule draws across 4 steps), Arena (6 feature cards), Ranked (a judged submission streaming line by line), closing CTA, footer.
+  - All copy describes what the system actually does; the one example ("+162") is the real result of two new players in the E2E.
+- **Bugs found by rendering and probing the page** (the Playwright screenshots were inspected each round):
+  1. **The full-screen 3D scene trapped the mouse wheel.** The Spline canvas consumes wheel events for camera zoom, so the page couldn't be scrolled past the hero. A capture-phase listener on the scene wrapper now stops wheel events before they reach the canvas, and the browser scrolls normally (D-054).
+  2. The scene's accent glow was green. A CSS `hue-rotate` alone turned the faintly blue cubes green, so the filter is now `grayscale(0.8) hue-rotate(-75deg) saturate(2.5)`: neutral cubes, gold glow (D-054).
+  3. The step rule animated from `scaleX: 0`, a zero-width box the IntersectionObserver never reported, so it never drew. It now inherits its trigger from the parent list's variants.
+  4. The terminal lost its indentation, fixed with `whitespace-pre`. An orphaned "away." in the hero subheading was fixed with `text-balance`.
+  - A flaky "wheel didn't scroll" result turned out to be the *probe's* fault. Headless Chromium's software WebGL delays input past a fixed sleep, so the check now waits for the scroll position (it passes consistently).
+- **Verified:** `pnpm test:e2e` passes 8/8: the 4 battle scenarios, rating, and 3 new landing tests (CTA → register, section anchors scroll in-page, signed-in CTA → `/play`, and reduced motion with no canvas and every section visible). Visual checks at 1440 px (scene loaded) and 390 px (no horizontal overflow). Typecheck, lint and build are green.
+- **Chunks:** landing 55 KB gzipped, Spline loader 81 KB gzipped plus the scene's runtime, all lazy. The signed-in app bundle is unchanged in practice (113 KB gzipped).
+
 ---
 
 ## Decisions
@@ -563,3 +584,37 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
   - `role="img"` with a summary label
   - a "Show as table" view of every point
   - the width tracked with a `ResizeObserver` (callback ref), checked at 390 px.
+
+### D-053 — Brand: black + grey + gold, with every text colour contrast-checked · Accepted
+- **Tokens** (Tailwind 4 `@theme` in `index.css`, so they're usable as utilities like `bg-gold` and `text-ash-300`):
+
+  | Token | Hex | Contrast on `#0a0a0a` | Use |
+  |---|---|---|---|
+  | `hero-bg` | `#0a0a0a` | n/a | background |
+  | `ink` | `#f5f5f4` | n/a | primary text |
+  | `ash-300` | `#a3a3a3` | 7.9:1 | body text |
+  | `ash-400` | `#8a8a8a` | 5.7:1 | tertiary text |
+  | `ash-700` / `ash-800` | n/a | n/a | borders / surfaces |
+  | `gold` | `#d4af37` | **9.4:1**, and `#0a0a0a` on gold is also 9.4:1 | text and button fill |
+  | `gold-light` / `gold-deep` | n/a | n/a | the wordmark gradient |
+
+  `#737373` (4.18:1) was rejected for text.
+- **Font:** Sora (300–700), loaded from Google Fonts in `index.html`, as in the reference.
+- **Scope:** for now, only the landing page uses Sora and gold. The signed-in app keeps zinc + emerald, and the rating chart's validated colour is unchanged (D-052). Carrying the brand through the app is a Phase 6 polish item.
+- **Adapted from the reference spec:** it assumed Tailwind 3 (`tailwind.config` + HSL vars) and shadcn/ui. This repo uses Tailwind 4 and has no shadcn, and two button styles don't justify adding it (cva, Radix, and a `components/ui` tree). The visual spec (tokens, type scale, timing, layout, pointer-events pattern) is reproduced as specified.
+
+### D-054 — Landing hero: lazy 3D scene with fallbacks, recolouring, and the wheel fix · Accepted
+- **The scene is the reference's Spline scene** (`prod.spline.design/Slk6b8kz3LRlKiyk`), lazy-loaded with `React.lazy`. It fades in only once `onLoad` fires, over a static gold-glow backdrop, so there's never a blank flash. The content layer is `pointer-events-none` so the scene stays interactive, and the CTAs opt back in.
+- **No 3D on phones (< 768 px) or with `prefers-reduced-motion`:** they get the static backdrop. WebGL is expensive on mobile, and the motion is exactly what reduced-motion users opted out of; the skill rates 3D as high-cost/high-risk. `MotionConfig reducedMotion="user"` also turns every entrance into a plain fade, and smooth anchor scrolling is disabled under reduced motion.
+- **Recolouring the scene without re-authoring it:** `filter: grayscale(0.8) hue-rotate(-75deg) saturate(2.5)`. The glow's hue (~119°) lands on gold (~44°), and the faint blue tint of the cubes is removed first so it can't turn green.
+- **Wheel passthrough:** the wrapper's capture-phase `wheel` listener calls `stopPropagation()` (passive, with no `preventDefault`). The canvas never sees the event, so it can't zoom or cancel it, and the page scrolls. Pointer interaction (hover glow, drag) is unaffected.
+- **Consequences:**
+  - At runtime the page depends on `prod.spline.design` (scene + assets). Phase 7's CSP must allow it, or the scene should be self-hosted (export `.splinecode` into `public/`).
+  - If the scene fails to load, the backdrop simply stays: the page is fully usable without it.
+
+### D-055 — Landing: the 3D scene is pinned; content scrolls over it · Accepted
+- **Request:** the animation stays fixed while all content scrolls.
+- **Decision:** `SplineBackground` moved out of the hero into a `fixed inset-0 z-0` layer at the page root. The nav, hero, sections and footer sit in a `relative z-10` layer above it. The hero is now transparent and fully `pointer-events-none`, with only its CTAs opting back in, so the pinned scene still gets hover and drag where the hero is. The capture-phase wheel passthrough (D-054) still applies: a wheel over the scene scrolls the page.
+- **Readability:** a fixed `ScrollDim` layer (framer-motion `useScroll` → `useTransform`) takes the scene from 30% to 72% black over the first ~0.9 viewport heights. The scene stays visible behind the sections but recedes enough for body text. The hero's bottom-left gradient now has a mask that fades it out, removing the hard seam that showed once the scene ran continuously behind the hero/section boundary.
+- **Verified** with a Playwright probe from scroll 0 to 2735 px: the canvas stays at `top: 0` and full viewport height while the hero heading moves 2735 px with the content. Wheel scrolling works over both the hero and the sections. Screenshots at mid-scroll, in the sections and at 390 px (static backdrop pinned the same way, no horizontal overflow). Landing E2E passes 3/3, and typecheck and lint are green.
+- **Consequence:** the WebGL scene is now visible (and rendering) for the whole page visit, not just above the fold. That was already its cost, since an off-screen canvas still renders; phones and reduced-motion users still never load it.
