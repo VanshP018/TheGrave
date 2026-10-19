@@ -44,7 +44,7 @@ test('landing: section links scroll in-page and a signed-in user is offered the 
 test.describe('reduced motion', () => {
   test.use({ reducedMotion: 'reduce' });
 
-  test('skips the 3D scene and still shows every section', async ({ page }) => {
+  test('keeps the background still and shows every section', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await page.waitForTimeout(1500);

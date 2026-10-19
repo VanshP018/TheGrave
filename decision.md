@@ -618,3 +618,266 @@ Status values: `Accepted`, `Superseded by D-xxx`, `Revisit in Phase N`.
 - **Readability:** a fixed `ScrollDim` layer (framer-motion `useScroll` → `useTransform`) takes the scene from 30% to 72% black over the first ~0.9 viewport heights. The scene stays visible behind the sections but recedes enough for body text. The hero's bottom-left gradient now has a mask that fades it out, removing the hard seam that showed once the scene ran continuously behind the hero/section boundary.
 - **Verified** with a Playwright probe from scroll 0 to 2735 px: the canvas stays at `top: 0` and full viewport height while the hero heading moves 2735 px with the content. Wheel scrolling works over both the hero and the sections. Screenshots at mid-scroll, in the sections and at 390 px (static backdrop pinned the same way, no horizontal overflow). Landing E2E passes 3/3, and typecheck and lint are green.
 - **Consequence:** the WebGL scene is now visible (and rendering) for the whole page visit, not just above the fold. That was already its cost, since an off-screen canvas still renders; phones and reduced-motion users still never load it.
+
+### D-056 — The app wears the brand; the 3D scene stays on the landing page · Accepted
+- **Request:** redesign every page in the landing page's black + grey + gold palette, without the animation. This supersedes D-053's scope note ("only the landing page uses Sora and gold").
+- **No Spline, no framer-motion outside `/`:** the app's pages are for focus (the lobby, a timed battle), and framer-motion + the Spline loader stay out of the app bundle (the landing page remains a lazy chunk). The only motion is CSS: the gold queue "ping", the loading pulse and the accept-window bar. All are `motion-safe:` or plain transitions.
+- **Global base:** `body` gets the `hero-bg` surface, `ink` text, Sora and a gold `::selection` in `index.css`, so no route can flash white or fall back to the system font. There are two new tokens: `ash-900 #141414` (card surface) and `ash-600 #3a3a3a` (control borders). The old `zinc-500` text (4.1:1) is gone; the faintest text is now `ash-400` (5.7:1).
+- **Shared primitives** in `components/ui.tsx`:
+  - class strings: `btnPrimary` (gold), `btnSecondary`, `card`, `input`, `focusRing`
+  - components: `Wordmark`, `Eyebrow`, `PageHeader`, `GoldBackdrop`
+  - These are plain strings and small components, not a UI kit, for the same reason as D-053.
+  - `GoldBackdrop` is a quieter static version of the landing glow + grid, pinned behind the app pages.
+- **Per page:**
+  - **Header:** sticky and blurred, with the wordmark. The nav is uppercase-tracked like the landing nav, the active link gets a gold underline, and the nav wraps to its own row on phones.
+  - **Login / register:** a card over the backdrop.
+  - **Lobby:** a gold CTA and a gold ping while searching. When a match is found, the card gets a gold border and the 10 s accept window drains as a bar.
+  - **Leaderboard:** the podium ranks are gold, and your own row is tinted with a gold inset rule plus a "you" badge.
+  - **Profile:** a gold monogram, a gold rating tile, gold positive deltas, and W–L–D as one non-wrapping value (it wrapped at 390 px).
+  - **Battle:**
+    - Header: the clock turns red in the last minute.
+    - Progress: your bar is gold and the opponent's is grey.
+    - Rest of the screen: a "Get ready" countdown, and a gold-gradient result card on a win.
+    - Monaco uses a custom `grave` theme: a `#111` surface, gold cursor, selection and keywords, and a gold-light number colour.
+- **Status colours stay semantic, not brand:** accepted, connected and win are emerald; errors and loss are red; "away" and judge failure changed from amber to **orange**, so a warning can't be mistaken for gold. Every status still comes with a text label.
+- **Rating chart (re-validated per D-052):** brand gold `#d4af37` **fails** the dark lightness band (L 0.77). `#c4a032` (0.72), `#bf9b2f` (0.70) and `#b8952b` (0.68) also fail. The line uses **`#b08e28`**, which passes every check against the new `#141414` card. The grid, crosshair and labels moved to the ash tokens.
+- **Verified:**
+  - Typecheck and lint are clean, and the full E2E suite passes 8/8. No test selectors changed: headings, labels and button names are identical.
+  - Screenshots of login, lobby (idle, queued, match found), leaderboard, profile with tooltip, battle, the win overlay, and profile and lobby at 390 px (no horizontal overflow).
+
+### D-057 — Battle arena: an IDE-style workspace · Accepted
+- **Request:** a more polished, professional arena, modelled on a reference online-judge IDE, in our palette.
+- **Layout (≥ 1024 px, fills the viewport, no page scroll):**
+  - **Top bar:** Back (asks to confirm while the match is live) and the problem title on the left; compact *You vs Opp* progress chips in the centre; on the right a clock pill (gold, turning red in the last minute), **Run** and a gold **Submit**.
+  - **Panels:** an icon rail switches the left panel between **Description** and **Match**. The problem panel and the editor column are split by a draggable divider, and the editor and console by a second one.
+- **Resizable panes:** `Splitter` is a `role="separator"` that uses pointer capture, so dragging across Monaco never loses the handle. Arrow keys and Home/End move it. Sizes are clamped (problem 25–65 %, console 15–70 %) and saved in `localStorage` per browser, with any storage failure falling back to the defaults. Widths and heights go through CSS variables (`lg:w-[var(--left)]`), so the inline size applies only at `lg` and up.
+- **Problem panel:** a difficulty pill (emerald, orange or red: status colours, per D-056), the limits, section titles with a hairline rule, and examples as Input/Output blocks with copy buttons. The statement renderer adds `**bold**`, still building React nodes rather than HTML.
+- **Editor toolbar:** a language pill, "Autosaved" (drafts already persist per match and language), reset to the starter code (with a confirm), and **focus mode**. Focus mode takes the editor and console full screen (Esc exits) and moves the clock and Run/Submit into the toolbar, so they are never hidden in a timed match.
+- **Keyboard:** Ctrl/⌘ + Enter runs and Ctrl/⌘ + Shift + Enter submits. They are bound with `editor.addCommand`, because Monaco consumes those keys before they reach `window`; refs keep the commands calling the latest handlers.
+- **Console tabs:**
+  - **Test results:** an overall verdict, then one chip per sample showing that case's input, your output and the expected output.
+  - **Submissions:** a count badge, and still carries `data-testid="my-submissions"`.
+  - **Errors:** compiler output and per-case stderr, with a count badge.
+  - Run switches to Test results and Submit switches to Submissions. The stale "Submitted, judging…" note is gone, because the list itself shows "Judging…".
+- **Match tab:** both players in detail (passed/total, attempts, judging, presence) plus the rules: submission-time ordering, the time-out tie-break, the grace period, and that the opponent sees progress but never code.
+- **Small screens:** everything stacks and the page scrolls. The rail becomes a labelled tab row, the dividers hide, and the editor gets 60 vh. No horizontal overflow at 390 px.
+- **Structure:** `BattlePage` keeps the data flow (query, draft, run/submit). The view pieces live in `components/battle/`: `ProblemPanel`, `ConsolePanel`, `Players`, `Splitter`, `ResultOverlay`, `format` and `icons`. The icons reuse the landing page's `Icon` base.
+- **Verified:** typecheck and lint are clean, and the full E2E suite passes 8/8 with no test changes: every test id, button name and the `Language` label are kept. Screenshots: idle, after a Run with a failing case selected, after a Submit with the Match tab open, focus mode, and 390 px.
+
+## D-058 — Judging animation and the win confetti (2026-11-19)
+
+**Context.** Submitting in the arena only added a row to the submissions list. The ask: show each test case spinning, then turning pass/fail, and burst confetti when every test passes.
+
+**Decision.**
+- The Submissions console tab opens with a **Last submission** panel (`components/battle/Judging.tsx`):
+  - A summary card shows "x/N test cases passed" and the status: In queue → Running tests → verdict.
+  - One `TC #n` card per test, plus details for the selected test. Hidden-test input and output read "Hidden", along with the verdict and time.
+- **The stagger is presentation.** The judge reports every test at once when it finishes (`processSubmission` writes `results` in one update). Until then every card spins. Once the verdict lands, the cards flip in order, spaced 60–160 ms apart so the whole sweep takes about a second. Each status disc springs in through framer-motion.
+  - Streaming real per-test progress would need the judge to write partial results. That isn't worth it for tests that each take milliseconds.
+- **Confetti** (`components/battle/Confetti.tsx`) is a dependency-free one-shot canvas:
+  - Gold, gold-light, ink and a touch of emerald.
+  - Two corner cannons and a centre pop, fading out after about 3 s.
+  - Skipped under `prefers-reduced-motion`; the reveal is instant there too.
+- **Ordering with the result overlay.** An accepted submission ends the match, and the socket result usually arrives before the sweep finishes. So the page holds the "You won!" overlay while its own submission sweeps, and brings it in 1.2 s into the burst (the confetti sits above it, z-60).
+  - A 5 s cap after the result arrives means the overlay is never held back for long.
+- **Restoring and staying mounted.**
+  - After a reload the latest submission is restored without animation or confetti.
+  - Console tabs now stay mounted (`hidden`), so a sweep started on one tab still finishes, and still celebrates, if you switch tabs.
+
+## D-059 — Recolour: gold → light blue (2026-11-19)
+
+**Context.** The brand moves from black + grey + gold to black + grey + a light, shiny blue. Every gold accent becomes blue.
+
+**Decision.**
+- **Tokens renamed as well as recoloured**, so class names say what they show:
+  - `--color-gold` → `--color-azure` #5cb8ff (9.2:1 on #0a0a0a, and #0a0a0a text on it is 9.2:1)
+  - `gold-light` → `azure-light` #a8dbff
+  - `gold-deep` → `azure-deep` #2b7fd9
+  - The "shine" is the existing light → base → deep gradient on the wordmark and on "You won!".
+  - Every `*-gold*` utility, `rgb(212 175 55 / …)` glow and raw hex was swapped mechanically, and `GoldBackdrop` became `GlowBackdrop`.
+- **Greys and status colours are unchanged.** Emerald, red and orange stay semantic. Orange was chosen in D-056 so it couldn't be mistaken for gold; it is now even further from the accent.
+- **Rating chart line** is #3b9be8, the nearest step of the new hue that passes the dataviz lightness band on #141414. #5cb8ff itself is too light (L 0.756).
+- **Editor theme:**
+  - Keywords, cursor, selection and the active line number use #5cb8ff.
+  - Numbers use #a8dbff and types #8fd0ff.
+  - Strings move from the warm grey #c8c3b4 to the cool grey #b9c3cf.
+- **Confetti:** blues, white and a touch of emerald.
+- **Spline hero:** the scene's own glow is green (~119°). The CSS filter now rotates it +87° to the brand blue (~206°) instead of −75° to gold. The grayscale strip still keeps the faintly blue cubes neutral.
+
+## D-060 — Landing: grid + drifting blue lights replace the 3D scene (2026-11-19)
+
+**Context.** The ask was to drop the Spline animation on the landing page and use the auth page's grid look instead, more visible, with a glowing blue light moving randomly behind it.
+
+**Decision.**
+- `components/landing/GridBackground.tsx` replaces `SplineBackground`. It stays pinned to the viewport, as in D-055, so the content scrolls over it.
+- **The grid** is 64 px, like the auth page's `GlowBackdrop`. The lines are light blue at 13% instead of 5%, so it reads clearly. A soft radial mask and an edge vignette keep the corners and the copy calm.
+- **Three blurred blue lights** sit behind the grid, in base, deep and light blue.
+  - Each picks a new random point and a duration of 5–9 s on every leg, through framer-motion's `onAnimationComplete`, so the path never visibly loops.
+  - Only transform and opacity are animated, which is cheap.
+  - Under reduced motion they stay still.
+- **Removed:**
+  - `SplineBackground.tsx` and the `ScrollDim` layer, which only existed to dim the busy scene.
+  - The `@splinetool/react-spline` and `@splinetool/runtime` dependencies, so the landing page no longer downloads a 3D runtime or a remote scene.
+  - The reduced-motion E2E test is renamed; it still asserts that no `<canvas>` exists.
+- **The auth and app pages are unchanged.** They keep the quieter static `GlowBackdrop`, per D-056.
+
+## D-061 — Landing: shadowy half-blur grid, a real footer, no section rules (2026-11-19)
+
+- **Grid.** It is drawn twice, for a depth-of-field look. A crisp layer is masked to an ellipse across the upper middle, and a 2.5 px-blurred, slightly brighter copy covers everything else. The two masks overlap, so the change is gradual. Shadow comes on top:
+  - a 25% black film, which makes the lights read as coming from under the grid
+  - a heavy radial vignette
+  - top and bottom fades into black
+
+  The drifting lights from D-060 are unchanged.
+- **No rules between sections.** The `border-t` on Arena, Ranked, the closing CTA and the old footer is gone, and so is the nav's bottom border once it turns solid; spacing alone separates them now.
+- **Footer.** The footer is solid #050505. It joins the page through a 16 rem gradient above it rather than a line, which is why the footer no longer clips its overflow. It contains:
+  - the wordmark, a blurb and an "arena is open" pill
+  - Product links (in-page anchors plus the leaderboard)
+  - Play links (find a match, create an account, log in). The last one is labelled "Log in" so the page has only one "Sign in" link, which the E2E test looks up by name.
+  - a static "Under the hood" list
+  - an oversized THEGRAVE wordmark fading into the floor
+  - the copyright line
+
+  The columns stack on phones, with no horizontal overflow at 390 px.
+
+## D-062 — Landing: every section in the footer's style, with a few grave-themed lines (2026-11-19)
+
+**Context.** The ask was to make the hero and every landing section match the footer: shadowy, classic and professional. It also asked for a few bold lines such as "turn their codebase into ashes", without overdoing it.
+
+**Decision.** There is one visual language across the page:
+- **Panels with no borders.** Depth comes from a #121212 → #070707 gradient, a deep drop shadow and a 1px inset top highlight.
+- **Ghost type**, a gradient from ash-700 to transparent, like the footer wordmark. It is used for section indices (01–03), step numbers and the "1v1" behind the closing call to action.
+- **Shadow bands.** Each section sits on a band that fades from transparent through #050505 and back, so sections separate without rules (D-061).
+
+**Hero**
+- A "Ranked 1v1 · Season 01" pill, a larger wordmark with a drop shadow, and the tagline.
+- A terminal-style **taunt** that types, holds and erases five lines, starting with "turn their codebase into ashes." The animated text is `aria-hidden` and the line carries a static `aria-label`; it is static under reduced motion.
+- A scripted **live-match card**, on large screens only and `aria-hidden`: progress bars, a verdict log and a "RIP" result line, looping every ~10 s.
+- A stats row: 30 problems, 2 languages, 1v1 real time, 1500 starting rating.
+
+**Sections**
+- **How it works:** four step cards with ghost numerals and a hover glow. The last step is renamed "Bury".
+- **Arena:** feature cards with a glowing icon tile and a corner glow on hover.
+- **Ranked:** the judge stream in a window frame, ending with "opponent 1500 → 1338 rest in peace." Below the heading are three rating facts (1500, ±350, 1 tx).
+- **Closing CTA:** a darker panel with a blue glow from below. It adds a secondary "See who's on top" link to the leaderboard.
+- **Manifesto (new):** a single loud typographic moment between Ranked and the CTA: "Every match ends in a funeral. / Make sure it isn't yours.", with "TheGrave · where ratings go to die" underneath.
+
+**Copy restraint.** The bold lines are limited to three places: the hero taunt, one mono `// kicker` per section, and the manifesto. Everything else stays factual.
+
+**Unchanged for the E2E tests:**
+- the h1 text
+- the "Enter the arena" link
+- the single "Sign in" link
+- the three section headings and the section-nav anchors
+
+No horizontal overflow at 390 px.
+
+## D-063 — Landing: no cards; type and spacing carry the page (2026-11-19)
+
+**Context.** The ask was to remove the cards and the live-match card, and to show things another way, or rearrange the text and spacing to fill the gaps.
+
+**Decision.** Every boxed element is gone: the live-match card, the step and feature panels, the judge terminal and the closing-CTA panel. The unused `panel` style went with them.
+- **Hero:**
+  - THEGRAVE now runs the full width (up to 13.5 rem).
+  - Beneath it the copy splits in two: tagline and taunt on the left; description and CTAs on the right, aligned to the right edge.
+  - The stats spread across the full width in larger mono type.
+- **How it works:** four text-only steps, each hanging off a giant ghost numeral (01–04), with a mono tag in blue.
+- **Arena:** an editorial split. The heading is sticky on the left (`lg:sticky top-32`) while a two-column list of icon, title and body scrolls past on the right. The icons get a soft blue drop-shadow glow in place of a tile.
+- **Ranked:** the terminal is replaced by **a rating swing told in type**:
+  - an "ACCEPTED · 9/9" line
+  - 1500, struck through
+  - an oversized gradient number that counts up to 1662 when scrolled into view (instant under reduced motion)
+  - +162, then "opponent 1500 → 1338 · rest in peace."
+- **Closing CTA:** stands bare on a blue glow rising from the bottom, with the ghost "1v1" behind it.
+- **Page wrapper:** `overflow-x-clip`, so glows that extend past their column never cause horizontal scroll. `clip`, unlike `hidden`, doesn't create a scroll container, so the sticky Arena heading still works.
+
+The heading texts, links and anchors the E2E tests use are unchanged.
+
+## D-064 — Play page: matchmaking bar + practice set, and a practice solving page (2026-11-19)
+
+**Context.** The ask was a more professional play page, following a judge's problem-list screenshot: matchmaking controls in a compact top area, and a practice question list below.
+
+**Server**
+- **`Problem.tags String[]`.** Migration `problem_tags`. The 30 seeded problems get one to three topics from `seed/tags.ts`, applied by the idempotent seed and the E2E setup. A unit test keeps the map and the problem set in step.
+- **`GET /problems` now returns `ProblemListItem[]`:**
+  - `tags`
+  - `acceptance`: accepted ÷ judged SUBMITs across all users, practice and battle, or null before any
+  - the caller's `solved` / `attempted` (any SUBMIT) / `seen`
+
+  It costs four grouped queries in parallel, whatever the size of the problem set. The judge-API test covers the new fields: per-user status and a 1/3 acceptance after one accepted, one wrong and one compile error.
+
+**Play page (`/play`)**
+- **Header:** "Lobby / Welcome, X", with the rating and "View profile" on the right.
+- **Matchmaking bar** (the `Lobby` component, restyled):
+  - Mode (Ranked 1v1), Language, Server status and In queue, plus the Find match / Searching… + Cancel action.
+  - The ready check expands the bar in place (`role="dialog"`, "Match found").
+  - **Language** is a real option. It is remembered per browser (`pref:language`) and is now the editor's starting language in battles and practice; it was always Python before. No fake modes were added: the server has one queue.
+- **Practice list** (`components/play/PracticeList.tsx`):
+  - topic chips with counts; the row scrolls sideways, and "Expand" wraps it
+  - search, which also matches topics
+  - a difficulty segment
+  - a status filter: all, unsolved, solved, not opened yet
+  - a sort that cycles through difficulty, acceptance and title
+  - an "x/N Solved" ring
+  - a random-unsolved button
+  - Rows alternate tint. Each shows a solved check or attempted dot, a number and title, two topics, acceptance %, and Easy / Med. / Hard in the status colours. An eye icon marks problems already opened.
+  - A visible note says **opening a problem takes it out of your ranked pool**. Viewing marks it seen (D-042), so players learn the trade-off before they make it.
+- `AppShell` gets a `wide` option (max-w-6xl) for this page.
+
+**Practice page (`/practice/:slug`, lazy like the arena)**
+- The arena's layout without an opponent or a clock: problem panel | editor + console, with resizable, remembered splits.
+- Run fills **Test results**, using the arena's `Results`, now exported.
+- Submit fills **Submission**, using the arena's `LastSubmission` spinner-to-verdict sweep, and fires the confetti on Accepted.
+- Drafts persist per problem and language in `localStorage`.
+- The list query is invalidated on open (seen) and after judging (solved/acceptance).
+- `pollSubmission` moved to `lib/submissions.ts`, shared with the arena.
+
+**Verified:**
+- Server typecheck clean; judge-API tests 11/11.
+- E2E 8/8 on a clean run; every battle and rating selector is kept, and no second "Leaderboard" link was added.
+- Screenshots against the dev stack (30 problems): the list, the searching state, the practice page and 390 px, with no horizontal overflow.
+
+## D-065 — Private rooms: play a friend with a code (2026-11-19)
+
+**Context.** The ask was "create your own room" next to matchmaking: a user creates a room, shares a code, and a friend joins.
+
+**Decision.** A room is a pre-battle lobby for exactly two players, host and guest. When the host starts, it becomes an ordinary match, so the countdown, clock, judging, forfeits, the result and the arena UI are all reused unchanged.
+
+**State and atomicity**
+- Rooms live in Redis (`room:{code}` HASH: host, guest, ready, difficulty). They change only through Lua scripts (`rooms/scripts.ts`: create, join, leave, update, start), as the matchmaker does (D-034).
+- **Membership uses the matchmaker's own `user:{id}:state` key** (`room:{code}`). So the existing JOIN script already refuses to queue a room member, and the room scripts refuse queued or in-match users: someone can never be in both.
+  - `Matchmaker.describe` and `join` now recognise that state. They return `IN_ROOM`, "Leave your private room before queueing".
+- **Start** checks host, guest present, guest ready and the guest's state, all in one script. It then deletes the room and moves both players to `match:room-{code}`.
+  - `BattleService.createMatch` is unchanged in shape: it rebinds that state to the real Match id, exactly as for a ranked ready check.
+  - If creation fails, both players are released and told `start-failed`.
+- **Codes:** six characters from an alphabet without look-alikes (no 0/O/1/I/L), generated with `crypto.randomInt`, retried on collision. Input is normalised, so "xf5-aac" works.
+- **TTL:** a room and its members' state expire after 2 h idle, as a safety net.
+
+**Rules**
+- The host picks the difficulty (Auto = rating-based like ranked, or Easy / Medium / Hard), can remove the guest, and starts.
+- Only the guest toggles Ready. Start stays disabled until then.
+- The host leaving closes the room for both players; a guest leaving frees the seat.
+- **Disconnects get a 15 s grace period** before a member is removed, so reloading the play page doesn't close the room. A reconnecting socket is resynced with `room:updated`.
+
+**Unrated**
+- `Match.rated Boolean @default(true)` (migration `match_rated`). Room matches are created with `rated: false`, and `finish()` skips Glicko-2 for them. Otherwise two friends could farm rating off each other, and the leaderboard means nothing.
+- `BattleView.rated` drives a "Friendly · unrated" badge in the arena, and "Friendly match: ratings are unchanged." on the result.
+- They don't appear in profile history, which is built from rating changes.
+
+**Client**
+- `RoomPanel` sits under the ranked bar on `/play`.
+  - Idle: code input + Join, and Create room.
+  - In a room: the big code, "Copy code" / "Copy invite link", host and guest seats with ready state, the difficulty segment (read-only for the guest), and Start / Ready / Remove guest / Close or Leave.
+- **Invite links** are `/play?room=CODE` and join automatically once the socket connects. `AuthForm` now keeps the query string when it returns you after login, so the link survives a sign-in.
+- Find match is disabled while in a room, with a hint under the ranked bar.
+- State lives in a `useRoom` store fed by `room:updated` / `room:closed` in `RealtimeProvider`. `battle:created` clears it.
+
+**Verified**
+- `test/rooms.test.ts` (4 tests):
+  - code format; full and not-found; queue and room exclusivity
+  - host-only difficulty and start; guest ready; an unrated battle ending with `ratingChanges: []` and ratings and `ratedGames` unchanged
+  - host-leave and kick
+  - surviving a quick reconnect, then being dropped after the grace period
+- The battle, matchmaker, rating, outcome, auth and stress suites (70 tests) still pass.
+- New `e2e/room.spec.ts`: create → invite link → ready → start → host wins → friendly result on both sides.
+- Full E2E 9/9. One earlier full run failed the room test because a judge run stayed "Running" for over 15 s; it was not reproducible in two reruns.
