@@ -37,6 +37,19 @@ export interface ProblemSummary {
   difficulty: Difficulty;
 }
 
+/** A row of the practice list: the summary plus topics, community stats and the caller's own status. */
+export interface ProblemListItem extends ProblemSummary {
+  tags: string[];
+  /** Share of judged SUBMITs (practice and battle) that were accepted; null before the first one. */
+  acceptance: number | null;
+  /** The caller has an accepted SUBMIT for this problem. */
+  solved: boolean;
+  /** The caller has submitted at least once. */
+  attempted: boolean;
+  /** The caller has opened it, so battles will no longer pick it for them (decision.md D-042). */
+  seen: boolean;
+}
+
 export interface ProblemDetail extends ProblemSummary {
   statement: string;
   /** Effective per-test limit for each language (base limit × language multiplier). */

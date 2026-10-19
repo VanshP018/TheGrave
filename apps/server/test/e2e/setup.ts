@@ -21,6 +21,7 @@ execSync('docker build -q -t thegrave-judge:latest judge', { stdio: 'ignore' });
 const { prisma } = await import('../../src/lib/prisma.js');
 const { buildTestCases, STARTER_CODE } = await import('../../src/seed/build.js');
 const { problems } = await import('../../src/seed/problems.js');
+const { TAGS } = await import('../../src/seed/tags.js');
 
 await prisma.$executeRawUnsafe('TRUNCATE "User", "Problem" CASCADE');
 // Exactly one problem, so every battle gets it and the tests know a correct solution.
@@ -32,6 +33,7 @@ await prisma.problem.create({
     difficulty: def.difficulty,
     statement: def.statement,
     starterCode: STARTER_CODE,
+    tags: TAGS[def.slug],
     testCases: { create: buildTestCases(def) },
   },
 });

@@ -22,6 +22,7 @@ import {
 import { matchRoutes } from '../modules/matches/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
 import { Leaderboard } from '../rating/leaderboard.js';
+import { RoomService, type RoomOptions } from '../rooms/service.js';
 import { startRatingMaintenance } from '../rating/maintenance.js';
 
 interface SocketData {
@@ -48,6 +49,7 @@ const RATE_MAX_EVENTS = 30;
 export interface RealtimeOptions {
   matchmaker?: Partial<MatchmakerOptions>;
   battle?: Partial<BattleOptions>;
+  rooms?: Partial<RoomOptions>;
   /** What happens once both players accept. Defaults to starting a battle; tests may override. */
   onConfirmed?: (match: ConfirmedMatch, mm: Matchmaker) => Promise<void> | void;
 }
@@ -106,6 +108,7 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     ...battleOptionsFromConfig(),
     ...opts.battle,
   });
+  const rooms = new RoomService(redis, notifier, battle, mm, opts.rooms);
   const battleWorker = createBattleWorker(battle);
   const maintenance = startRatingMaintenance(leaderboard, { log: app.log });
   maintenance.catch((err) => app.log.error({ err }, 'rating maintenance failed to start'));
@@ -132,7 +135,7 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
   io.on('connection', (socket) => {
     const userId = socket.data.user.id;
     void socket.join(userRoom(userId));
-    void resync(socket, mm, battle).catch((err) => app.log.error({ err }, 'resync failed'));
+    void resync(socket, mm, battle, rooms).catch((err) => app.log.error({ err }, 'resync failed'));
 
     socket.on('time:sync', (ack) => {
       if (typeof ack === 'function') ack({ serverNow: Date.now() });
@@ -141,8 +144,9 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     socket.on('queue:join', (ack) =>
       handle(socket, ack, async () => {
         const res = await mm.join(userId);
-        return res.ok
-          ? { ok: true, joinedAt: res.joinedAt }
+        if (res.ok) return { ok: true, joinedAt: res.joinedAt };
+        return res.code === 'IN_ROOM'
+          ? fail('IN_ROOM', 'Leave your private room before queueing')
           : fail(res.code, 'You are already in a match');
       }),
     );
@@ -166,6 +170,22 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
       ),
     );
 
+    socket.on('room:create', (ack) => handle(socket, ack, () => rooms.create(userId)));
+    socket.on('room:join', (payload, ack) =>
+      handle(socket, ack, () => rooms.join(userId, String(payload?.code ?? ''))),
+    );
+    socket.on('room:leave', (ack) =>
+      handle(socket, ack, async () =>
+        (await rooms.leave(userId))
+          ? { ok: true }
+          : fail('ROOM_NOT_FOUND', 'You are not in a room'),
+      ),
+    );
+    socket.on('room:update', (payload, ack) =>
+      handle(socket, ack, () => rooms.update(userId, payload ?? {})),
+    );
+    socket.on('room:start', (ack) => handle(socket, ack, () => rooms.start(userId)));
+
     socket.on('disconnect', async () => {
       if (shuttingDown) return;
       // Only leave the queue when this was the user's last socket on *any* node (multi-tab safe).
@@ -175,6 +195,7 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
         if (remaining.length === 0) {
           await mm.leave(userId, 'disconnected');
           await battle.markAway(userId);
+          rooms.scheduleLeave(userId);
         }
       } catch (err) {
         app.log.warn({ err, userId }, 'could not check remaining sockets on disconnect');
@@ -187,6 +208,7 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
   app.addHook('preClose', async () => {
     shuttingDown = true;
     await mm.stop();
+    rooms.stop();
     await battleWorker.close();
     await maintenance.then((m) => m.close()).catch(() => {});
     io.local.disconnectSockets(true);
@@ -195,7 +217,7 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     await Promise.allSettled([pub.quit(), sub.quit()]);
   });
 
-  return { io, matchmaker: mm, battle, leaderboard, maintenance };
+  return { io, matchmaker: mm, battle, rooms, leaderboard, maintenance };
 }
 
 const fail = (code: AckError, message: string): Ack => ({ ok: false, code, message });
@@ -215,7 +237,12 @@ async function handle<T extends Ack>(socket: GraveSocket, ack: unknown, fn: () =
 }
 
 /** A (re)connecting socket learns the user's current matchmaking/battle state, e.g. after a page reload. */
-async function resync(socket: GraveSocket, mm: Matchmaker, battle: BattleService) {
+async function resync(
+  socket: GraveSocket,
+  mm: Matchmaker,
+  battle: BattleService,
+  rooms: RoomService,
+) {
   const match = await battle.currentMatch(socket.data.user.id);
   if (match) {
     await socket.join(matchRoom(match.id));
@@ -225,6 +252,11 @@ async function resync(socket: GraveSocket, mm: Matchmaker, battle: BattleService
       startsAt: match.startsAt.getTime(),
       endsAt: match.endsAt.getTime(),
     });
+    return;
+  }
+  const room = await rooms.current(socket.data.user.id);
+  if (room) {
+    socket.emit('room:updated', room);
     return;
   }
   const s = await mm.describe(socket.data.user.id);

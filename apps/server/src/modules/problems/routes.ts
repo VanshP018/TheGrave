@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   codeSubmissionSchema,
   type ProblemDetail,
-  type ProblemSummary,
+  type ProblemListItem,
   type SubmissionKind,
   type SubmissionView,
   type TestResultView,
@@ -23,10 +23,41 @@ export async function problemRoutes(app: FastifyInstance) {
   // Problems are only visible to signed-in users, and viewing one marks it seen (decision.md D-029, D-042).
   app.addHook('onRequest', app.authenticate);
 
-  app.get('/problems', async (): Promise<ProblemSummary[]> => {
-    return prisma.problem.findMany({
-      select: { slug: true, title: true, difficulty: true },
-      orderBy: [{ difficulty: 'asc' }, { title: 'asc' }],
+  app.get('/problems', async (req): Promise<ProblemListItem[]> => {
+    const userId = req.auth!.userId;
+    const done = { kind: 'SUBMIT', status: 'DONE' } as const;
+    const [problems, totals, accepted, mine, seen] = await Promise.all([
+      prisma.problem.findMany({
+        select: { id: true, slug: true, title: true, difficulty: true, tags: true },
+        orderBy: [{ difficulty: 'asc' }, { title: 'asc' }],
+      }),
+      prisma.submission.groupBy({ by: ['problemId'], where: done, _count: { _all: true } }),
+      prisma.submission.groupBy({
+        by: ['problemId'],
+        where: { ...done, verdict: 'ACCEPTED' },
+        _count: { _all: true },
+      }),
+      prisma.submission.groupBy({
+        by: ['problemId', 'verdict'],
+        where: { userId, kind: 'SUBMIT' },
+        _count: { _all: true },
+      }),
+      prisma.seenProblem.findMany({ where: { userId }, select: { problemId: true } }),
+    ]);
+    const count = (rows: { problemId: string; _count: { _all: number } }[]) =>
+      new Map(rows.map((r) => [r.problemId, r._count._all]));
+    const total = count(totals);
+    const ok = count(accepted);
+    const seenIds = new Set(seen.map((s) => s.problemId));
+    return problems.map(({ id, ...p }) => {
+      const n = total.get(id) ?? 0;
+      return {
+        ...p,
+        acceptance: n ? (ok.get(id) ?? 0) / n : null,
+        solved: mine.some((m) => m.problemId === id && m.verdict === 'ACCEPTED'),
+        attempted: mine.some((m) => m.problemId === id),
+        seen: seenIds.has(id),
+      };
     });
   });
 

@@ -43,13 +43,16 @@ export interface ConfirmedMatch {
 }
 
 export type JoinResult =
-  { ok: true; joinedAt: number; already: boolean } | { ok: false; code: 'ALREADY_IN_MATCH' };
+  | { ok: true; joinedAt: number; already: boolean }
+  | { ok: false; code: 'ALREADY_IN_MATCH' | 'IN_ROOM' };
 
 export type UserState =
   | { state: 'idle' }
   | { state: 'queued'; joinedAt: number }
   | { state: 'ready'; matchId: string; opponent: Opponent; expiresAt: number }
-  | { state: 'match'; matchId: string };
+  | { state: 'match'; matchId: string }
+  /** In a private room (decision.md D-065); rooms own this state, matchmaking only respects it. */
+  | { state: 'room'; code: string };
 
 const LOCK_KEY = 'mm:tick-lock';
 
@@ -104,7 +107,8 @@ export class Matchmaker {
       rating,
       this.opts.leaseMs,
     ]);
-    if (status === 'busy') return { ok: false, code: 'ALREADY_IN_MATCH' };
+    if (status === 'busy')
+      return { ok: false, code: value.startsWith('room:') ? 'IN_ROOM' : 'ALREADY_IN_MATCH' };
     const joinedAt = Number(value);
     // Every tab of the user learns about it, not just the one that clicked.
     this.notify.toUser(userId, 'queue:joined', { joinedAt });
@@ -186,6 +190,7 @@ export class Matchmaker {
       const opponent = players.get(a === userId ? b! : a)!;
       return { state: 'ready', matchId: id!, opponent, expiresAt: Number(deadline) };
     }
+    if (st.startsWith('room:')) return { state: 'room', code: st.slice('room:'.length) };
     return { state: 'match', matchId: st.slice('match:'.length) };
   }
 

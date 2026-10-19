@@ -41,6 +41,8 @@ export interface MySubmission {
 export interface BattleView {
   id: string;
   status: MatchStatus;
+  /** False for private-room matches, which never change ratings. */
+  rated: boolean;
   /** Server epoch ms; render countdowns with the server clock offset (see `time:sync`). */
   startsAt: number;
   endsAt: number;

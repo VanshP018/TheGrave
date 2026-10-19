@@ -1,5 +1,6 @@
 // Socket.IO contract shared by server and client: matchmaking (Phase 3) and battles (Phase 4).
 import type { MatchResult, PlayerProgress } from './battle.js';
+import type { RoomClosedReason, RoomDifficulty, RoomView } from './room.js';
 
 export interface Opponent {
   id: string;
@@ -11,6 +12,10 @@ export type AckError =
   | 'ALREADY_IN_MATCH' // user:{id}:state says ready-check or match
   | 'NOT_QUEUED'
   | 'MATCH_NOT_FOUND' // ready check expired, was cancelled, or you are not part of it
+  | 'IN_ROOM' // in a private room: leave it before queueing or joining another
+  | 'ROOM_NOT_FOUND'
+  | 'ROOM_FULL'
+  | 'NOT_ALLOWED' // e.g. a guest trying to start, or starting before the guest is ready
   | 'RATE_LIMITED'
   | 'INTERNAL';
 
@@ -43,6 +48,11 @@ export interface ServerToClientEvents {
   'battle:finished': (payload: { matchId: string; result: MatchResult }) => void;
   /** One of *your* battle submissions finished judging; fetch /api/submissions/{id} for details. */
   'submission:judged': (payload: { matchId: string; submissionId: string }) => void;
+
+  /** Private rooms: the full room on every change, to both members (and on reconnect). */
+  'room:updated': (room: RoomView) => void;
+  /** You are no longer in the room (it did not start a battle; a start sends `battle:created`). */
+  'room:closed': (payload: { code: string; reason: RoomClosedReason }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -50,6 +60,16 @@ export interface ClientToServerEvents {
   'queue:leave': (ack: (res: Ack) => void) => void;
   'match:accept': (payload: { matchId: string }, ack: (res: Ack) => void) => void;
   'match:decline': (payload: { matchId: string }, ack: (res: Ack) => void) => void;
+  'room:create': (ack: (res: Ack<{ room: RoomView }>) => void) => void;
+  'room:join': (payload: { code: string }, ack: (res: Ack<{ room: RoomView }>) => void) => void;
+  'room:leave': (ack: (res: Ack) => void) => void;
+  /** Host: difficulty or kick. Guest: ready. */
+  'room:update': (
+    payload: { difficulty?: RoomDifficulty; ready?: boolean; kick?: boolean },
+    ack: (res: Ack) => void,
+  ) => void;
+  /** Host only, once the guest is ready. */
+  'room:start': (ack: (res: Ack) => void) => void;
   /** NTP-style clock sync: client sends nothing, server acks with its epoch ms. */
   'time:sync': (ack: (res: { serverNow: number }) => void) => void;
 }

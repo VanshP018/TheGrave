@@ -80,14 +80,21 @@ export class BattleService {
 
   // ---- lifecycle ---------------------------------------------------------------------------
 
-  async createMatch(confirmed: ConfirmedMatch): Promise<string> {
+  /**
+   * Starts a battle between two confirmed players. Ranked pairs pass no options; private rooms
+   * (decision.md D-065) choose the difficulty and are unrated.
+   */
+  async createMatch(
+    confirmed: ConfirmedMatch,
+    opts: { difficulty?: Difficulty; rated?: boolean } = {},
+  ): Promise<string> {
     const ids = confirmed.players.map((p) => p.id);
     const users = await prisma.user.findMany({
       where: { id: { in: ids } },
       select: { id: true, rating: true },
     });
     const avg = users.reduce((s, u) => s + u.rating, 0) / users.length;
-    const problem = await pickProblem(ids, difficultyFor(avg));
+    const problem = await pickProblem(ids, opts.difficulty ?? difficultyFor(avg));
 
     const startsAt = Date.now() + this.opts.countdownMs;
     const endsAt = startsAt + this.opts.durationMs[problem.difficulty];
@@ -97,6 +104,7 @@ export class BattleService {
           problemId: problem.id,
           startsAt: new Date(startsAt),
           endsAt: new Date(endsAt),
+          rated: opts.rated ?? true,
           players: { create: users.map((u) => ({ userId: u.id, ratingBefore: u.rating })) },
         },
       });
@@ -245,8 +253,12 @@ export class BattleService {
       const ids = (
         await tx.matchPlayer.findMany({ where: { matchId }, select: { userId: true } })
       ).map((p) => p.userId) as [string, string];
+      const { rated } = await tx.match.findUniqueOrThrow({
+        where: { id: matchId },
+        select: { rated: true },
+      });
       const changes =
-        result.status === 'FINISHED'
+        result.status === 'FINISHED' && rated
           ? await applyMatchRating(tx, matchId, ids, result.winnerId)
           : [];
       return { ids, changes };
@@ -367,6 +379,7 @@ export class BattleService {
     return {
       id: m.id,
       status: m.status,
+      rated: m.rated,
       startsAt: m.startsAt.getTime(),
       endsAt: m.endsAt.getTime(),
       serverNow: Date.now(),
