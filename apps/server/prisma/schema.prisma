@@ -89,6 +89,8 @@ model Problem {
   timeLimitMs   Int        @default(1000)
   memoryLimitMb Int        @default(256)
   starterCode   Json // { python: string, cpp: string }
+  // Topic labels for the practice list (decision.md D-064)
+  tags          String[]   @default([])
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
@@ -168,6 +170,8 @@ model Match {
   endReason  MatchEndReason?
   // Set in the same transaction that applies the rating change: the idempotency gate (D-048)
   ratedAt    DateTime?
+  // False for private-room matches: they never touch ratings (decision.md D-065)
+  rated      Boolean         @default(true)
   createdAt  DateTime        @default(now())
 
   players       MatchPlayer[]

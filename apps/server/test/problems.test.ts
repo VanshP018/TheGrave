@@ -3,6 +3,7 @@ import { DockerExecutor } from '../src/judge/docker-executor.js';
 import { effectiveTimeLimitMs } from '../src/judge/executor.js';
 import { buildTestCases } from '../src/seed/build.js';
 import { problems } from '../src/seed/problems.js';
+import { TAGS } from '../src/seed/tags.js';
 
 const exec = new DockerExecutor({ image: 'thegrave-judge:latest' });
 
@@ -13,6 +14,12 @@ describe('problem set', () => {
     for (const d of ['EASY', 'MEDIUM', 'HARD']) {
       expect(problems.filter((p) => p.difficulty === d).length).toBeGreaterThanOrEqual(8);
     }
+  });
+
+  it('tags every problem with one to three topics, and nothing else', () => {
+    for (const p of problems) expect(TAGS[p.slug]?.length, p.slug).toBeGreaterThanOrEqual(1);
+    for (const tags of Object.values(TAGS)) expect(tags.length).toBeLessThanOrEqual(3);
+    expect(Object.keys(TAGS).sort()).toEqual(problems.map((p) => p.slug).sort());
   });
 
   it('generates deterministic tests with samples first', () => {

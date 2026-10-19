@@ -67,7 +67,16 @@ describe('problems API', () => {
   it('lists problems and shows a problem with samples only', async () => {
     const list = await app.inject({ method: 'GET', url: '/api/problems', headers: alice });
     expect(list.json()).toEqual([
-      { slug: 'sum-of-array', title: 'Sum of Array', difficulty: 'EASY' },
+      {
+        slug: 'sum-of-array',
+        title: 'Sum of Array',
+        difficulty: 'EASY',
+        tags: [],
+        acceptance: null,
+        solved: false,
+        attempted: false,
+        seen: false,
+      },
     ]);
 
     const res = await app.inject({
@@ -131,6 +140,16 @@ describe('run & submit through the queue and a real judge', () => {
     );
     expect(sub.verdict).toBe('COMPILE_ERROR');
     expect(sub.compileOutput).toBeTruthy();
+  });
+
+  it('the practice list reports acceptance and per-user status', async () => {
+    const [a] = (await app.inject({ method: 'GET', url: '/api/problems', headers: alice })).json();
+    // alice opened the problem above, then submitted an accepted, a wrong and a non-compiling solution.
+    expect(a).toMatchObject({ solved: true, attempted: true, seen: true });
+    expect(a.acceptance).toBeCloseTo(1 / 3);
+    const [b] = (await app.inject({ method: 'GET', url: '/api/problems', headers: bob })).json();
+    expect(b).toMatchObject({ solved: false, attempted: false, seen: false });
+    expect(b.acceptance).toBeCloseTo(1 / 3);
   });
 
   it("hides other users' submissions (404)", async () => {

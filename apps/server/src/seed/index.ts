@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { buildTestCases, STARTER_CODE } from './build.js';
 import { problems } from './problems.js';
+import { TAGS } from './tags.js';
 
 // Idempotent: upserts problems by slug and replaces their test cases.
 for (const def of problems) {
@@ -14,6 +15,7 @@ for (const def of problems) {
         statement: def.statement,
         timeLimitMs: def.timeLimitMs ?? 1000,
         starterCode: STARTER_CODE,
+        tags: TAGS[def.slug] ?? [],
       };
       const problem = await tx.problem.upsert({
         where: { slug: def.slug },
