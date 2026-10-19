@@ -24,8 +24,11 @@ export function GuestRoute() {
 
 export function FullScreenMessage({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen grid place-items-center bg-zinc-950 text-zinc-400">
-      {children}
+    <main className="grid min-h-screen place-items-center text-sm uppercase tracking-widest text-ash-300">
+      <span className="flex items-center gap-3">
+        <span className="h-2 w-2 rounded-full bg-azure motion-safe:animate-pulse" aria-hidden />
+        {children}
+      </span>
     </main>
   );
 }

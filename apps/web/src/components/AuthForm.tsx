@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { ApiRequestError } from '../lib/api';
 import { useAuth } from '../stores/auth';
+import { btnPrimary, card, Eyebrow, focusRing, GlowBackdrop, input, Wordmark } from './ui';
 
 interface Field {
   name: string;
@@ -24,8 +25,10 @@ export function AuthForm({ title, submitLabel, fields, submit, footer }: Props) 
   const [values, setValues] = useState<Record<string, string>>({});
   const setSession = useAuth((s) => s.setSession);
   const navigate = useNavigate();
-  const from =
-    (useLocation().state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/play';
+  const location = useLocation();
+  // Back to where the user was headed, query string included (a room invite is /play?room=CODE).
+  const target = (location.state as { from?: { pathname: string; search?: string } } | null)?.from;
+  const from = target ? `${target.pathname}${target.search ?? ''}` : '/play';
 
   const mutation = useMutation({
     mutationFn: () => submit(values),
@@ -44,60 +47,62 @@ export function AuthForm({ title, submitLabel, fields, submit, footer }: Props) 
   };
 
   return (
-    <main className="min-h-screen grid place-items-center bg-zinc-950 px-4 text-zinc-100">
-      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5" noValidate>
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            theGrave
-          </p>
-          <h1 className="mt-1 text-2xl font-bold">{title}</h1>
-        </div>
+    <main className="relative grid min-h-screen place-items-center px-4 py-16">
+      <GlowBackdrop />
+      <div className="relative w-full max-w-sm">
+        <Wordmark className="mb-8 inline-block text-xl" />
+        <form onSubmit={onSubmit} className={`${card} space-y-5 p-6 sm:p-8`} noValidate>
+          <div>
+            <Eyebrow>The arena</Eyebrow>
+            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.02em]">{title}</h1>
+          </div>
 
-        {fields.map((f) => (
-          <label key={f.name} className="block space-y-1">
-            <span className="text-sm text-zinc-300">{f.label}</span>
-            <input
-              name={f.name}
-              type={f.type}
-              autoComplete={f.autoComplete}
-              required
-              value={values[f.name] ?? ''}
-              onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
-              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500"
-            />
-            {fieldError(f.name) && (
-              <span className="text-xs text-red-400">{fieldError(f.name)}</span>
-            )}
-          </label>
-        ))}
+          {fields.map((f) => (
+            <label key={f.name} className="block space-y-1.5">
+              <span className="text-sm text-ash-300">{f.label}</span>
+              <input
+                name={f.name}
+                type={f.type}
+                autoComplete={f.autoComplete}
+                required
+                aria-invalid={!!fieldError(f.name)}
+                value={values[f.name] ?? ''}
+                onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+                className={`${input} aria-invalid:border-red-400`}
+              />
+              {fieldError(f.name) && (
+                <span className="text-xs text-red-400">{fieldError(f.name)}</span>
+              )}
+            </label>
+          ))}
 
-        {mutation.isError && !err?.issues && (
-          <p role="alert" className="rounded-md bg-red-950/60 px-3 py-2 text-sm text-red-300">
-            {mutation.error instanceof ApiRequestError
-              ? mutation.error.message
-              : 'Could not reach the server'}
-          </p>
-        )}
+          {mutation.isError && !err?.issues && (
+            <p
+              role="alert"
+              className="rounded-sm border border-red-500/30 bg-red-950/40 px-3 py-2 text-sm text-red-300"
+            >
+              {mutation.error instanceof ApiRequestError
+                ? mutation.error.message
+                : 'Could not reach the server'}
+            </p>
+          )}
 
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="w-full rounded-md bg-emerald-600 py-2 font-semibold hover:bg-emerald-500 disabled:opacity-50"
-        >
-          {mutation.isPending ? 'Please wait…' : submitLabel}
-        </button>
+          <button type="submit" disabled={mutation.isPending} className={`${btnPrimary} w-full`}>
+            {mutation.isPending ? 'Please wait…' : submitLabel}
+          </button>
+        </form>
 
-        <p className="text-center text-sm text-zinc-400">
+        <p className="mt-6 text-center text-sm text-ash-300">
           {footer.text}{' '}
           <Link
             to={footer.to}
-            state={useLocation().state}
-            className="text-emerald-400 hover:underline"
+            state={location.state}
+            className={`text-azure underline-offset-4 hover:underline ${focusRing}`}
           >
             {footer.linkText}
           </Link>
         </p>
-      </form>
+      </div>
     </main>
   );
 }

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router';
 import { syncClock } from '../lib/clock';
 import { disconnectSocket, getSocket } from '../lib/socket';
 import { useLobby } from '../stores/lobby';
+import { useRoom } from '../stores/room';
 
 /**
  * One socket for the whole signed-in app (it must survive navigating lobby → battle).
@@ -58,9 +59,26 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       }),
     );
 
+    const setRoom = useRoom.getState().set;
+    s.on('room:updated', (room) => setRoom({ room, notice: null }));
+    s.on('room:closed', ({ reason }) =>
+      setRoom({
+        room: null,
+        notice:
+          reason === 'host-left'
+            ? 'The host closed the room.'
+            : reason === 'kicked'
+              ? 'The host removed you from the room.'
+              : reason === 'start-failed'
+                ? 'The battle could not start. Try again.'
+                : null,
+      }),
+    );
+
     // Also sent on reconnect while a battle is live, so a reload anywhere lands back in the battle.
     s.on('battle:created', ({ matchId }) => {
       set({ status: 'idle', match: null, notice: null });
+      setRoom({ room: null, notice: null });
       if (!window.location.pathname.startsWith(`/battle/${matchId}`))
         navigate(`/battle/${matchId}`);
     });
@@ -85,6 +103,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       s.removeAllListeners();
       disconnectSocket();
       set({ connected: false, status: 'idle', match: null });
+      useRoom.getState().set({ room: null, notice: null });
     };
   }, [navigate, qc]);
 

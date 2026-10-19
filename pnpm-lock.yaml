@@ -126,12 +126,6 @@ importers:
       '@monaco-editor/react':
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.57.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@splinetool/react-spline':
-        specifier: ^4.2.0
-        version: 4.2.0(@splinetool/runtime@2.0.190)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@splinetool/runtime':
-        specifier: ^2.0.190
-        version: 2.0.190
       '@tanstack/react-query':
         specifier: ^5.108.0
         version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
@@ -829,20 +823,6 @@ packages:
     peerDependencies:
       socket.io-adapter: ^2.5.4
 
-  '@splinetool/react-spline@4.2.0':
-    resolution: {integrity: sha512-wW5dOTGLxIDtuM3rXi1AmcteQKzghhAEyrIsS2gD16w1f675MTM5TV8X8l5W0PdNfnTntAcB5gjhp5snDIsFRg==}
-    peerDependencies:
-      '@splinetool/runtime': '*'
-      next: '>=14.2.0'
-      react: '*'
-      react-dom: '*'
-    peerDependenciesMeta:
-      next:
-        optional: true
-
-  '@splinetool/runtime@2.0.190':
-    resolution: {integrity: sha512-F+hoxSzdXS7OhllqSOqlitcQ/2B1CRnbgJ7EPJtkucGxIB2y8yBQHusVW4oSEGDPZ4Dtwq9ShC34bCS7BJEZ5A==}
-
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -1224,9 +1204,6 @@ packages:
 
   better-result@2.10.0:
     resolution: {integrity: sha512-oQhh0y1qo2/ZKdAAEvHZAqKKiHOFU5k/bW96fE2ScgQOVkJRiHwB+nOS1SgFsYqRlxMDWvefXi9Q3px7QvgNDw==}
-
-  blurhash@2.0.5:
-    resolution: {integrity: sha512-cRygWd7kGBQO3VEhPiTgq4Wc43ctsM+o46urrmPOiuAe+07fzlSB9OJVdpgDL0jPqXUVQ9ht7aq7kxOeJHRK+w==}
 
   brace-expansion@5.0.13:
     resolution: {integrity: sha512-Vh3dmFbc4wZeox7M9I/0L9GfFd83Su4+yCck/OF9Gi/P/dAHn0RT7X4K9R7gMNMhDck3DvhR6QXsnQdjjgwNvQ==}
@@ -1835,9 +1812,6 @@ packages:
     resolution: {integrity: sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==}
     engines: {node: '>=10'}
 
-  lodash.debounce@4.0.8:
-    resolution: {integrity: sha512-FT1yDzDYEoYWhnSGnpE/4Kj1fLZkDFyqRb7fNt6FdYOSxlUWAtp42Eh6Wb0rGIv/m9Bgo7x4GhQbm5Ys4SG5ow==}
-
   lodash.includes@4.3.0:
     resolution: {integrity: sha512-W3Bx6mdkRTGtlJISOvVD/lbqjTlPPUDTMnlXZFnVwi9NKJ6tiAk6LVdlhZMm17VZisqhKcgzpO5Wz91PCt5b0w==}
 
@@ -1966,10 +1940,6 @@ packages:
 
   ohash@2.0.12:
     resolution: {integrity: sha512-65S/5gk9YSsaRjcyf7Nfa6h/d3E8/1gslpXfI4W7Dxn/oap8IKRuNT5VXkLQ1YFKIEg4apRY4Pj6aiwFzrDdmw==}
-
-  on-change@4.0.0:
-    resolution: {integrity: sha512-PTu7C9Jsz4b+sNMDpH0eZFTr7uxdOtoDWRnhaVNK50bgrrnW5nvbWI0jm5DG9qOoTnIhBzE9xoKVFPD9xgtbdg==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   on-exit-leak-free@2.1.2:
     resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
@@ -2153,9 +2123,6 @@ packages:
     peerDependencies:
       react: ^19.3.1
 
-  react-merge-refs@2.1.1:
-    resolution: {integrity: sha512-jLQXJ/URln51zskhgppGJ2ub7b2WFKGq3cl3NYKtlHoTG+dN2q7EzWrn3hN3EgPsTMvpR9tpq5ijdp7YwFZkag==}
-
   react-router@8.5.1:
     resolution: {integrity: sha512-5u1eQ46QjuXjNfEnLwzrnou1Bm5dquO3xjVYkkMYCudtkicD2AQHtx+fvXzPATtPJx8TW6DR1x1TDRqsfHyZBw==}
     engines: {node: '>=22.22.0'}
@@ -2236,9 +2203,6 @@ packages:
 
   secure-json-parse@4.1.1:
     resolution: {integrity: sha512-lnd81MQEZKjhW/Gd2TQqdd4XP6QYNdDW/EP+I7nTrFHP9y2LmaGPIHk9xsnzcOiEr1c39c/e84xFgGviQKBTRw==}
-
-  semver-compare@1.0.0:
-    resolution: {integrity: sha512-YM3/ITh2MJ5MtzaM429anh+x2jiLVjqILF4m4oyQB18W7Ggea7BfqdH/wGMK7dDiMghv/6WG7znWMwUDzJiXow==}
 
   semver@7.8.6:
     resolution: {integrity: sha512-9lpSSU4Mly3mrtruwLs1eLK6+gzbzqeBFwRNjIjE+9LuDpWdYctrQlQ3ej1Ilgi7gknpsTRnPoLP8DpCHqHIJw==}
@@ -2322,9 +2286,6 @@ packages:
   thread-stream@4.2.1:
     resolution: {integrity: sha512-Stg6edJXC/6/xqGwSXwFokrUhChJ18amEjpKH89WrQQ0oVFDF+pUUcTpiwWhFUrE89Vf16FBOlwhaw+lescxMQ==}
     engines: {node: '>=20'}
-
-  thumbhash@0.1.1:
-    resolution: {integrity: sha512-kH5pKeIIBPQXAOni2AiY/Cu/NKdkFREdpH+TLdM0g6WA7RriCv0kPLgP731ady67MhTAqrVG/4mnEeibVuCJcg==}
 
   tinybench@6.2.3:
     resolution: {integrity: sha512-Al01C2JIBnO2CXCAPbpAl6sUiOZHeThGtHYNTa51JRw9PyWOCdr+9Ong05R4qg/Sk3+H645E8ov1h2c58ityNw==}
@@ -3071,21 +3032,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@splinetool/react-spline@4.2.0(@splinetool/runtime@2.0.190)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
-    dependencies:
-      '@splinetool/runtime': 2.0.190
-      blurhash: 2.0.5
-      lodash.debounce: 4.0.8
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-      react-merge-refs: 2.1.1
-      thumbhash: 0.1.1
-
-  '@splinetool/runtime@2.0.190':
-    dependencies:
-      on-change: 4.0.0
-      semver-compare: 1.0.0
-
   '@standard-schema/spec@1.1.0': {}
 
   '@tailwindcss/node@4.3.5':
@@ -3506,8 +3452,6 @@ snapshots:
   balanced-match@4.0.4: {}
 
   better-result@2.10.0: {}
-
-  blurhash@2.0.5: {}
 
   brace-expansion@5.0.13:
     dependencies:
@@ -4121,8 +4065,6 @@ snapshots:
     dependencies:
       p-locate: 5.0.0
 
-  lodash.debounce@4.0.8: {}
-
   lodash.includes@4.3.0: {}
 
   lodash.isboolean@3.0.3: {}
@@ -4232,8 +4174,6 @@ snapshots:
   obug@3.0.0: {}
 
   ohash@2.0.12: {}
-
-  on-change@4.0.0: {}
 
   on-exit-leak-free@2.1.2: {}
 
@@ -4428,8 +4368,6 @@ snapshots:
       react: 19.3.1
       scheduler: 0.28.0
 
-  react-merge-refs@2.1.1: {}
-
   react-router@8.5.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       '@remix-run/route-pattern': 0.22.1
@@ -4497,8 +4435,6 @@ snapshots:
   scheduler@0.28.0: {}
 
   secure-json-parse@4.1.1: {}
-
-  semver-compare@1.0.0: {}
 
   semver@7.8.6: {}
 
@@ -4585,8 +4521,6 @@ snapshots:
   thread-stream@4.2.1:
     dependencies:
       real-require: 1.0.0
-
-  thumbhash@0.1.1: {}
 
   tinybench@6.2.3: {}
 

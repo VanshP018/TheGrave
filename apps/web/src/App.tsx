@@ -10,7 +10,8 @@ import { RegisterPage } from './pages/RegisterPage';
 
 // Monaco is large: only load it when a battle opens.
 const BattlePage = lazy(() => import('./pages/BattlePage'));
-// framer-motion + the Spline loader stay out of the app bundle for signed-in pages.
+const PracticePage = lazy(() => import('./pages/PracticePage'));
+// framer-motion stays out of the app bundle for signed-in pages.
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 
 export default function App() {
@@ -24,7 +25,7 @@ export default function App() {
       <Route
         path="/"
         element={
-          <Suspense fallback={<div className="min-h-screen bg-hero-bg" />}>
+          <Suspense fallback={<div className="min-h-screen" />}>
             <LandingPage />
           </Suspense>
         }
@@ -37,6 +38,14 @@ export default function App() {
         <Route path="/play" element={<HomePage />} />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/u/:username" element={<ProfilePage />} />
+        <Route
+          path="/practice/:slug"
+          element={
+            <Suspense fallback={<FullScreenMessage>Loading problem…</FullScreenMessage>}>
+              <PracticePage />
+            </Suspense>
+          }
+        />
         <Route
           path="/battle/:id"
           element={

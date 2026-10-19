@@ -1,7 +1,7 @@
 import type { SVGProps } from 'react';
 
 /** Inline stroke icons (Lucide-style geometry), decorative: always paired with a text label. */
-function Icon(props: SVGProps<SVGSVGElement>) {
+export function Icon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
       viewBox="0 0 24 24"

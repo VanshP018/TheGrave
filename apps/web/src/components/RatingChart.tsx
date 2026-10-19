@@ -3,12 +3,13 @@ import { useEffect, useMemo, useState, type KeyboardEvent, type PointerEvent } f
 /**
  * Rating after each game, as a single-series line (dataviz skill: 2px line, end dot with a
  * 2px surface ring, solid hairline grid, crosshair + tooltip, keyboard access, table view).
- * The series color was validated against the card surface for dark mode (decision.md D-052).
+ * The series color was validated against the card surface for dark mode (decision.md D-052, D-056):
+ * brand azure #5cb8ff is too light for the dark band, so the line uses the nearest passing step of its hue.
  */
-const SERIES = '#10a87a';
-const SURFACE = '#18181b'; // zinc-900, the card this chart sits on
-const GRID = '#27272a'; // zinc-800: one step off the surface
-const CROSSHAIR = '#71717a'; // zinc-500
+const SERIES = '#3b9be8';
+const SURFACE = '#141414'; // ash-900, the card this chart sits on
+const GRID = '#262626'; // ash-700: one step off the surface
+const CROSSHAIR = '#8a8a8a'; // ash-400
 
 const HEIGHT = 220;
 const M = { top: 16, right: 52, bottom: 28, left: 44 };
@@ -69,7 +70,7 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
   }, [points, width]);
 
   if (points.length < 2) {
-    return <p className="py-10 text-center text-sm text-zinc-500">No rated games yet.</p>;
+    return <p className="py-10 text-center text-sm text-ash-400">No rated games yet.</p>;
   }
 
   const last = points.length - 1;
@@ -105,7 +106,7 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
             onKeyDown={onKey}
             onFocus={() => setActive((a) => a ?? last)}
             onBlur={() => setActive(null)}
-            className="rounded outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
+            className="rounded outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
           >
             {geo.ticks.map((t) => (
               <g key={t}>
@@ -122,7 +123,7 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
                   y={geo.y(t)}
                   dy="0.32em"
                   textAnchor="end"
-                  className="fill-zinc-500 text-[11px] tabular-nums"
+                  className="fill-ash-400 text-[11px] tabular-nums"
                 >
                   {t}
                 </text>
@@ -134,7 +135,7 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
                 x={geo.x(g)}
                 y={HEIGHT - 8}
                 textAnchor="middle"
-                className="fill-zinc-500 text-[11px] tabular-nums"
+                className="fill-ash-400 text-[11px] tabular-nums"
               >
                 {g === 0 ? 'start' : `game ${g}`}
               </text>
@@ -176,7 +177,7 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
               x={geo.x(last) + 10}
               y={geo.y(points[last]!.rating)}
               dy="0.32em"
-              className="fill-zinc-100 text-xs font-semibold"
+              className="fill-ink text-xs font-semibold"
             >
               {points[last]!.rating}
             </text>
@@ -196,7 +197,7 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
 
         {p && (
           <div
-            className="pointer-events-none absolute top-0 -translate-x-1/2 rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-xs shadow-lg"
+            className="pointer-events-none absolute top-0 -translate-x-1/2 rounded-md border border-ash-600 bg-hero-bg px-2.5 py-1.5 text-xs shadow-lg"
             style={{ left: tipLeft }}
             role="status"
           >
@@ -206,28 +207,28 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
                 style={{ background: SERIES }}
                 aria-hidden
               />
-              <span className="font-semibold text-zinc-100">{p.rating}</span>
+              <span className="font-semibold text-ink">{p.rating}</span>
               {delta !== null && (
-                <span className="text-zinc-400">
+                <span className="text-ash-300">
                   ({delta > 0 ? '+' : ''}
                   {delta})
                 </span>
               )}
             </div>
-            <div className="text-zinc-500">
+            <div className="text-ash-400">
               {shown === 0 ? 'starting rating' : `after game ${shown}`} · {fmtDate(p.at)}
             </div>
           </div>
         )}
       </div>
 
-      <details className="mt-2 text-xs text-zinc-400">
-        <summary className="cursor-pointer select-none text-zinc-500 hover:text-zinc-300">
+      <details className="mt-2 text-xs text-ash-300">
+        <summary className="cursor-pointer select-none text-ash-400 hover:text-ink">
           Show as table
         </summary>
-        <div className="mt-2 max-h-56 overflow-auto rounded border border-zinc-800">
+        <div className="mt-2 max-h-56 overflow-auto rounded border border-ash-700">
           <table className="w-full tabular-nums">
-            <thead className="sticky top-0 bg-zinc-900 text-left text-zinc-500">
+            <thead className="sticky top-0 bg-ash-900 text-left text-ash-400">
               <tr>
                 <th className="px-3 py-1 font-medium">Game</th>
                 <th className="px-3 py-1 font-medium">Date</th>
@@ -237,10 +238,10 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
             </thead>
             <tbody>
               {points.map((pt, i) => (
-                <tr key={i} className="border-t border-zinc-800">
+                <tr key={i} className="border-t border-ash-700">
                   <td className="px-3 py-1">{i === 0 ? 'start' : i}</td>
                   <td className="px-3 py-1">{fmtDate(pt.at)}</td>
-                  <td className="px-3 py-1 text-right text-zinc-200">{pt.rating}</td>
+                  <td className="px-3 py-1 text-right text-ink">{pt.rating}</td>
                   <td className="px-3 py-1 text-right">
                     {i === 0
                       ? ''
