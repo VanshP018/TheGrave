@@ -1,15 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import argon2 from 'argon2';
-import type { LoginInput, PublicUser, RegisterInput } from '@thegrave/shared';
+import type { LoginInput, PublicUser } from '@thegrave/shared';
 import { config } from '../../config.js';
 import { Prisma } from '../../generated/prisma/client.js';
+import { avatarUrl } from '../../lib/avatar.js';
 import { prisma } from '../../lib/prisma.js';
 import { generateRefreshToken, hashRefreshToken, signAccessToken } from '../../lib/tokens.js';
 
 export class AuthError extends Error {
   constructor(
-    public readonly statusCode: 401 | 409,
+    public readonly statusCode: 400 | 401 | 404 | 409 | 429,
     message: string,
+    /** Extra JSON fields for the response body, e.g. attemptsLeft (decision.md D-076). */
+    public readonly extra: Record<string, unknown> = {},
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
   }
@@ -32,12 +36,16 @@ const toPublicUser = (u: {
   id: string;
   username: string;
   email: string;
+  institution: string | null;
   rating: number;
+  avatarUpdatedAt: Date | null;
 }): PublicUser => ({
   id: u.id,
   username: u.username,
   email: u.email,
+  institution: u.institution,
   rating: Math.round(u.rating),
+  avatarUrl: avatarUrl(u),
 });
 
 async function issueTokens(
@@ -63,12 +71,18 @@ async function issueTokens(
   };
 }
 
-export async function register(input: RegisterInput): Promise<IssuedTokens> {
-  const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
+/**
+ * Creates the account once its email code has been verified (decision.md D-076) and logs it in.
+ * The password arrives already hashed: it was hashed when registration started.
+ */
+export async function createVerifiedUser(input: {
+  username: string;
+  email: string;
+  institution: string;
+  passwordHash: string;
+}): Promise<IssuedTokens> {
   try {
-    const user = await prisma.user.create({
-      data: { username: input.username, email: input.email, passwordHash },
-    });
+    const user = await prisma.user.create({ data: { ...input, emailVerifiedAt: new Date() } });
     return await issueTokens(user, randomUUID());
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {

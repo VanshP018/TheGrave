@@ -1,6 +1,13 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { loginSchema, registerSchema, type AuthResponse } from '@thegrave/shared';
+import {
+  loginSchema,
+  registerSchema,
+  resendCodeSchema,
+  verifyEmailSchema,
+  type AuthResponse,
+} from '@thegrave/shared';
 import { config } from '../../config.js';
+import * as pending from './pending.js';
 import * as auth from './service.js';
 
 export const REFRESH_COOKIE = 'tg_refresh';
@@ -26,9 +33,20 @@ function clearRefreshCookie(reply: FastifyReply) {
 const limit = (max: number) => ({ rateLimit: { max, timeWindow: '1 minute' } });
 
 export async function authRoutes(app: FastifyInstance) {
+  // Registration is three steps (decision.md D-076): start (emails a code), verify (creates the account), resend.
   app.post('/auth/register', { config: limit(5) }, async (req, reply) => {
-    const issued = await auth.register(registerSchema.parse(req.body));
-    return sendTokens(reply, issued, 201);
+    const started = await pending.startRegistration(registerSchema.parse(req.body));
+    return reply.code(202).send(started);
+  });
+
+  app.post('/auth/register/verify', { config: limit(10) }, async (req, reply) => {
+    const { email, code } = verifyEmailSchema.parse(req.body);
+    return sendTokens(reply, await pending.verifyRegistration(email, code), 201);
+  });
+
+  app.post('/auth/register/resend', { config: limit(5) }, async (req, reply) => {
+    const started = await pending.resendCode(resendCodeSchema.parse(req.body).email);
+    return reply.code(202).send(started);
   });
 
   app.post('/auth/login', { config: limit(5) }, async (req, reply) => {
