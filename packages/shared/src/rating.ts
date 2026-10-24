@@ -1,5 +1,6 @@
 import type { Difficulty } from './judge.js';
 import type { MatchEndReason } from './battle.js';
+import type { SocialLinks } from './profile.js';
 
 export type GameOutcome = 'WIN' | 'LOSS' | 'DRAW';
 
@@ -19,9 +20,18 @@ export interface LeaderboardEntry {
   /** RD above the provisional threshold: shown with a "?". */
   provisional: boolean;
   games: number;
+  /** The player's school or college (decision.md D-079); null for accounts created before it was asked. */
+  institution: string | null;
 }
 
+/** Whose ranking: everyone, or only players from the viewer's own school/college. */
+export type LeaderboardScope = 'global' | 'university';
+
 export interface LeaderboardPage {
+  /** The scope this page was computed for. */
+  scope: LeaderboardScope;
+  /** The viewer's school/college, which the `university` scope is limited to; null if they have none. */
+  institution: string | null;
   total: number;
   offset: number;
   entries: LeaderboardEntry[];
@@ -32,6 +42,14 @@ export interface LeaderboardPage {
 export interface ProfileView {
   userId: string;
   username: string;
+  /** Public profile extras (decision.md D-071). */
+  bio: string | null;
+  /** School / college (decision.md D-076). */
+  institution: string | null;
+  links: SocialLinks;
+  avatarUrl: string | null;
+  /** Highest rating reached, from the history. */
+  peakRating: number;
   joinedAt: number;
   rating: number;
   /** Effective RD right now, including inactivity. */
