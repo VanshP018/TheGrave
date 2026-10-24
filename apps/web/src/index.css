@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* Sora is bundled (no request to Google Fonts): privacy, and a CSP that only allows our own origin (D-080). */
+@import '@fontsource-variable/sora';
 
 /*
  * Brand tokens: black + grey + light blue (decision.md D-053, recoloured in D-059). Contrast on #0a0a0a:
@@ -6,7 +8,7 @@
  * Nothing below 4.5:1 is used for text.
  */
 @theme {
-  --font-sora: 'Sora', ui-sans-serif, system-ui, sans-serif;
+  --font-sora: 'Sora Variable', 'Sora', ui-sans-serif, system-ui, sans-serif;
 
   --color-hero-bg: #0a0a0a;
   --color-ink: #f5f5f4;
@@ -40,5 +42,21 @@ body {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+}
+
+/* Registration swaps its card contents between steps (decision.md D-076). */
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.step-in {
+  animation: step-in 0.25s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .step-in {
+    animation: none;
   }
 }

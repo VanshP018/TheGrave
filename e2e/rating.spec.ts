@@ -19,6 +19,15 @@ test('leaderboard ranks the seeded players and the profile shows W/L/D, graph an
   );
   expect(ratings).toEqual([...ratings].sort((x, y) => y - x));
   await expect(page.getByTestId('my-rank')).toContainText(/You are #\d+ of \d+/);
+
+  // The same board limited to the viewer's school or college (decision.md D-079). Everyone seeded here
+  // is from one school, so it matches the global board, and it names that school.
+  await page.getByRole('button', { name: 'My university' }).click();
+  await expect(page).toHaveURL(/scope=university/);
+  await expect(page.getByTestId('my-rank')).toContainText(/You are #\d+ of \d+ at Grave Academy/);
+  await expect(rows).toHaveCount(5);
+  await page.getByRole('button', { name: 'Global' }).click();
+  await expect(page).not.toHaveURL(/scope=/);
   await expect(page.locator('tr[aria-current="true"]')).toContainText('veteran');
   await page.screenshot({ path: 'test-results/leaderboard.png', fullPage: true });
 
@@ -30,6 +39,7 @@ test('leaderboard ranks the seeded players and the profile shows W/L/D, graph an
   await expect(chart).toBeVisible();
 
   // Crosshair tooltip on hover, and the same data in the table view.
+  await chart.scrollIntoViewIfNeeded(); // the profile hero is tall: the chart starts below the fold
   const box = (await chart.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
   await expect(page.getByRole('status')).toContainText(/after game \d+/);

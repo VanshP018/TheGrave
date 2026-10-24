@@ -1,4 +1,4 @@
-import type { ApiError, AuthResponse } from '@thegrave/shared';
+import type { ApiError, AuthResponse, RegisterStartResponse } from '@thegrave/shared';
 import { useAuth } from '../stores/auth';
 
 export class ApiRequestError extends Error {
@@ -71,7 +71,13 @@ export async function api<T>(
 }
 
 export const authApi = {
-  register: (json: unknown) => api<AuthResponse>('/auth/register', { method: 'POST', json }),
+  // Registration is two steps: an emailed code, then the account (decision.md D-076).
+  register: (json: unknown) =>
+    api<RegisterStartResponse>('/auth/register', { method: 'POST', json }),
+  verifyEmail: (json: unknown) =>
+    api<AuthResponse>('/auth/register/verify', { method: 'POST', json }),
+  resendCode: (json: unknown) =>
+    api<RegisterStartResponse>('/auth/register/resend', { method: 'POST', json }),
   login: (json: unknown) => api<AuthResponse>('/auth/login', { method: 'POST', json }),
   logout: () => api<void>('/auth/logout', { method: 'POST' }),
 };

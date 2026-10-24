@@ -11,6 +11,7 @@ const TAUNTS = [
   'make their test cases fail in silence.',
   'win before they finish compiling.',
   'leave nothing but a stack trace.',
+  'ship the fix before they find the bug.',
 ];
 
 /** A terminal prompt that types a taunt, holds it, erases it and moves on. Static under reduced motion. */
@@ -54,8 +55,8 @@ function Taunt() {
 // ---- Hero --------------------------------------------------------------------------------------
 
 const STATS = [
-  { value: '30', label: 'Problems' },
-  { value: '2', label: 'Languages' },
+  { value: '30', label: 'DSA problems' },
+  { value: '5', label: 'Debug codebases' },
   { value: '1v1', label: 'Real time' },
   { value: '1500', label: 'Starting rating' },
 ];
@@ -111,8 +112,9 @@ export function Hero() {
               custom={0.55}
               className="text-pretty text-[clamp(0.9375rem,1.4vw,1.125rem)] font-light leading-relaxed text-ash-300"
             >
-              Real-time algorithm battles. Matched by rating, judged in a locked-down sandbox,
-              settled on a clock only the server controls. The first fully accepted solution wins.
+              Race a friend or a stranger on algorithms, or fix the same broken codebase before they
+              do. Matched by rating, judged in a locked-down sandbox, settled on a clock only the
+              server controls.
             </motion.p>
             <motion.div
               variants={fadeUp}

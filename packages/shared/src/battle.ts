@@ -1,13 +1,26 @@
 import type { Language, ProblemDetail, SubmissionStatus, Verdict } from './judge.js';
+import type { ProjectDetail, ProjectLanguage } from './project.js';
 import type { RatingChange } from './rating.js';
 
 export type MatchStatus = 'PENDING' | 'ACTIVE' | 'FINISHED' | 'ABORTED';
-export type MatchEndReason = 'SOLVED' | 'TIMEOUT' | 'FORFEIT' | 'ABANDONED';
+/** DSA: one stdin/stdout problem. PROGRAMMING: a codebase to debug (decision.md D-067). */
+export type MatchMode = 'DSA' | 'PROGRAMMING';
+export const MATCH_MODES: MatchMode[] = ['DSA', 'PROGRAMMING'];
+export type MatchEndReason =
+  | 'SOLVED'
+  | 'TIMEOUT'
+  | 'FORFEIT'
+  | 'ABANDONED'
+  /** Both players agreed to a draw (decision.md D-068). */
+  | 'AGREED'
+  /** A player quit; the opponent wins. */
+  | 'RESIGNED';
 
 /** What a player may know about anyone in the match, including the opponent. Never code. */
 export interface PlayerProgress {
   userId: string;
   username: string;
+  avatarUrl: string | null;
   rating: number;
   attempts: number;
   /** Judging still in progress. */
@@ -30,7 +43,8 @@ export interface MatchResult {
 
 export interface MySubmission {
   id: string;
-  language: Language;
+  /** For PROGRAMMING matches, the project's language. */
+  language: Language | ProjectLanguage;
   status: SubmissionStatus;
   verdict: Verdict | null;
   testsPassed: number | null;
@@ -47,11 +61,16 @@ export interface BattleView {
   startsAt: number;
   endsAt: number;
   serverNow: number;
-  /** Hidden until the match starts. */
+  mode: MatchMode;
+  /** DSA matches: hidden until the match starts. */
   problem: ProblemDetail | null;
+  /** PROGRAMMING matches: the codebase, hidden until the match starts. */
+  project: ProjectDetail | null;
   totalTests: number | null;
   players: PlayerProgress[];
   mySubmissions: MySubmission[];
   submitCooldownMs: number;
+  /** Who has a draw offer open right now, if anyone (decision.md D-068). */
+  drawOfferedBy: string | null;
   result: MatchResult | null;
 }

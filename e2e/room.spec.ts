@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { Redis } from 'ioredis';
 import { E2E_REDIS_URL } from '../playwright.config';
+import { registerViaUi } from './helpers';
 
 // Private rooms (decision.md D-065): create, share an invite link, ready up, start an unrated battle.
 const SOLVES = 'import sys;d=sys.stdin.read().split();print(sum(map(int,d[1:])))';
@@ -16,11 +17,7 @@ let seq = 0;
 async function player(browser: Browser, name: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
   const username = `${name}${Date.now() % 100000}${seq++}`;
-  await page.goto('/register');
-  await page.getByLabel('Username').fill(username);
-  await page.getByLabel('Email').fill(`${username}@e2e.test`);
-  await page.getByLabel('Password').fill('correct-horse-battery');
-  await page.getByRole('button', { name: 'Register' }).click();
+  await registerViaUi(page, username);
   await expect(page.getByRole('heading', { name: `Welcome, ${username}` })).toBeVisible();
   await expect(page.getByText('Connected')).toBeVisible();
   return page;

@@ -6,11 +6,13 @@ import { HomePage } from './pages/HomePage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { ProjectsPage } from './pages/ProjectsPage';
 import { RegisterPage } from './pages/RegisterPage';
 
 // Monaco is large: only load it when a battle opens.
 const BattlePage = lazy(() => import('./pages/BattlePage'));
 const PracticePage = lazy(() => import('./pages/PracticePage'));
+const ProjectPage = lazy(() => import('./pages/ProjectPage'));
 // framer-motion stays out of the app bundle for signed-in pages.
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 
@@ -36,6 +38,15 @@ export default function App() {
       </Route>
       <Route element={<ProtectedRoute />}>
         <Route path="/play" element={<HomePage />} />
+        <Route path="/projects" element={<ProjectsPage />} />
+        <Route
+          path="/projects/:slug"
+          element={
+            <Suspense fallback={<FullScreenMessage>Loading workspace…</FullScreenMessage>}>
+              <ProjectPage />
+            </Suspense>
+          }
+        />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/u/:username" element={<ProfilePage />} />
         <Route

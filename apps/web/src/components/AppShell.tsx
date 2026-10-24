@@ -2,17 +2,13 @@ import type { ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router';
 import { authApi } from '../lib/api';
 import { useAuth } from '../stores/auth';
+import { Avatar } from './Avatar';
+import { UserSearch } from './UserSearch';
+import { NAV_ACTIONS, NAV_BRAND, NAV_LINKS, NAV_ROW, navLink } from './nav';
 import { focusRing, GlowBackdrop, Wordmark } from './ui';
 
-const linkClass = ({ isActive }: { isActive: boolean }) =>
-  `relative py-1 text-xs uppercase tracking-widest transition-colors duration-200 ${focusRing} ${
-    isActive
-      ? 'text-ink after:absolute after:inset-x-0 after:-bottom-[13px] after:h-px after:bg-azure'
-      : 'text-ash-300 hover:text-ink'
-  }`;
-
 /** Header + nav for the signed-in pages (the battle screen has its own header). */
-export function AppShell({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
+export function AppShell({ children }: { children: ReactNode; wide?: boolean }) {
   const user = useAuth((s) => s.user);
   const clear = useAuth((s) => s.clear);
   const navigate = useNavigate();
@@ -26,31 +22,49 @@ export function AppShell({ children, wide = false }: { children: ReactNode; wide
   return (
     <div className="relative min-h-screen">
       <GlowBackdrop fixed />
+      {/* Full width like the landing nav (decision.md D-073): brand far left, sections centred, search +
+          profile + log out far right. On phones the sections and search drop to their own row. */}
       <header className="sticky top-0 z-40 border-b border-ash-700/60 bg-hero-bg/75 backdrop-blur-md">
-        {/* On phones the nav drops to its own row so nothing has to shrink below a tappable size. */}
-        <div
-          className={`mx-auto flex ${wide ? 'max-w-6xl' : 'max-w-5xl'} flex-wrap items-center justify-between gap-x-8 gap-y-3 px-4 py-3 sm:px-6`}
-        >
-          <Wordmark className="text-lg" />
-          <nav className="order-last flex w-full gap-6 sm:order-none sm:w-auto sm:flex-1">
-            <NavLink to="/play" className={linkClass}>
-              Play
+        <div className={NAV_ROW}>
+          <Wordmark className={NAV_BRAND} />
+          <nav aria-label="Main" className={NAV_LINKS}>
+            <NavLink to="/play" className={({ isActive }) => navLink(isActive)}>
+              DSA
             </NavLink>
-            <NavLink to="/leaderboard" className={linkClass}>
+            <NavLink to="/projects" className={({ isActive }) => navLink(isActive)}>
+              Programming
+            </NavLink>
+            <NavLink to="/leaderboard" className={({ isActive }) => navLink(isActive)}>
               Leaderboard
             </NavLink>
+          </nav>
+          <div className={NAV_ACTIONS}>
+            <div className="hidden md:block">
+              <UserSearch />
+            </div>
+            {/* The profile button: your avatar, ringed in blue while you're on your profile (D-070). */}
             {user && (
-              <NavLink to={`/u/${user.username}`} className={linkClass}>
-                Profile
+              <NavLink
+                to={`/u/${user.username}`}
+                aria-label="Your profile"
+                title={`${user.username} · profile`}
+                className={`rounded-full transition-transform duration-200 hover:scale-105 ${focusRing}`}
+              >
+                {({ isActive }) => (
+                  <Avatar username={user.username} url={user.avatarUrl} size={36} glow={isActive} />
+                )}
               </NavLink>
             )}
-          </nav>
-          <button
-            onClick={logout}
-            className={`min-h-9 cursor-pointer text-xs uppercase tracking-widest text-ash-300 transition-colors duration-200 hover:text-azure ${focusRing}`}
-          >
-            Log out
-          </button>
+            <button
+              onClick={logout}
+              className={`min-h-9 cursor-pointer text-xs uppercase tracking-widest text-ash-300 transition-colors duration-200 hover:text-azure ${focusRing}`}
+            >
+              Log out
+            </button>
+          </div>
+          <div className="order-last w-full md:hidden">
+            <UserSearch />
+          </div>
         </div>
       </header>
       <main className="relative">{children}</main>

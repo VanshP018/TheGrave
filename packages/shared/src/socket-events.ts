@@ -1,5 +1,5 @@
 // Socket.IO contract shared by server and client: matchmaking (Phase 3) and battles (Phase 4).
-import type { MatchResult, PlayerProgress } from './battle.js';
+import type { MatchMode, MatchResult, PlayerProgress } from './battle.js';
 import type { RoomClosedReason, RoomDifficulty, RoomView } from './room.js';
 
 export interface Opponent {
@@ -10,6 +10,7 @@ export interface Opponent {
 
 export type AckError =
   | 'ALREADY_IN_MATCH' // user:{id}:state says ready-check or match
+  | 'IN_QUEUE' // queued in the other mode's queue
   | 'NOT_QUEUED'
   | 'MATCH_NOT_FOUND' // ready check expired, was cancelled, or you are not part of it
   | 'IN_ROOM' // in a private room: leave it before queueing or joining another
@@ -26,11 +27,17 @@ export type MatchCancelReason = 'declined' | 'timeout';
 
 export interface ServerToClientEvents {
   /** Sent to every socket of the user, so all tabs stay in sync. */
-  'queue:joined': (payload: { joinedAt: number }) => void;
-  'queue:left': (payload: { reason: QueueLeftReason }) => void;
-  'queue:stats': (payload: { queued: number }) => void;
+  'queue:joined': (payload: { joinedAt: number; mode: MatchMode }) => void;
+  'queue:left': (payload: { reason: QueueLeftReason; mode: MatchMode }) => void;
+  /** Per queue: each mode has its own (decision.md D-067). */
+  'queue:stats': (payload: { queued: number; mode: MatchMode }) => void;
   /** Ready check: both players must `match:accept` before `expiresAt` (server epoch ms). */
-  'match:found': (payload: { matchId: string; opponent: Opponent; expiresAt: number }) => void;
+  'match:found': (payload: {
+    matchId: string;
+    opponent: Opponent;
+    expiresAt: number;
+    mode: MatchMode;
+  }) => void;
   'match:accepted': (payload: { matchId: string; userId: string }) => void;
   'match:confirmed': (payload: { matchId: string; opponent: Opponent }) => void;
   /** `requeued` is true when you accepted (or did nothing wrong) and were put back in the queue. */
@@ -46,6 +53,15 @@ export interface ServerToClientEvents {
   /** Sent on every submit and verdict, for both players. Progress only, never code. */
   'battle:progress': (payload: { matchId: string; player: PlayerProgress }) => void;
   'battle:finished': (payload: { matchId: string; result: MatchResult }) => void;
+  /**
+   * The draw offer changed (decision.md D-068): `offeredBy` opened one, or null when it was declined,
+   * withdrawn or expired. `declinedBy` is set when the opponent said no.
+   */
+  'battle:draw': (payload: {
+    matchId: string;
+    offeredBy: string | null;
+    declinedBy?: string;
+  }) => void;
   /** One of *your* battle submissions finished judging; fetch /api/submissions/{id} for details. */
   'submission:judged': (payload: { matchId: string; submissionId: string }) => void;
 
@@ -56,16 +72,25 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
-  'queue:join': (ack: (res: Ack<{ joinedAt: number }>) => void) => void;
+  /** Joins the queue for `mode` (DSA when omitted); one queue at a time. */
+  'queue:join': (
+    ...args:
+      | [ack: (res: Ack<{ joinedAt: number }>) => void]
+      | [payload: { mode: MatchMode }, ack: (res: Ack<{ joinedAt: number }>) => void]
+  ) => void;
   'queue:leave': (ack: (res: Ack) => void) => void;
   'match:accept': (payload: { matchId: string }, ack: (res: Ack) => void) => void;
   'match:decline': (payload: { matchId: string }, ack: (res: Ack) => void) => void;
-  'room:create': (ack: (res: Ack<{ room: RoomView }>) => void) => void;
+  'room:create': (
+    ...args:
+      | [ack: (res: Ack<{ room: RoomView }>) => void]
+      | [payload: { mode: MatchMode }, ack: (res: Ack<{ room: RoomView }>) => void]
+  ) => void;
   'room:join': (payload: { code: string }, ack: (res: Ack<{ room: RoomView }>) => void) => void;
   'room:leave': (ack: (res: Ack) => void) => void;
   /** Host: difficulty or kick. Guest: ready. */
   'room:update': (
-    payload: { difficulty?: RoomDifficulty; ready?: boolean; kick?: boolean },
+    payload: { difficulty?: RoomDifficulty; mode?: MatchMode; ready?: boolean; kick?: boolean },
     ack: (res: Ack) => void,
   ) => void;
   /** Host only, once the guest is ready. */

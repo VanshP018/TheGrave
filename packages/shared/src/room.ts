@@ -1,3 +1,4 @@
+import type { MatchMode } from './battle.js';
 import type { Difficulty } from './judge.js';
 
 /** Private rooms (decision.md D-065): a host shares a code, one friend joins, the host starts an unrated battle. */
@@ -16,6 +17,8 @@ export interface RoomView {
   guestReady: boolean;
   /** AUTO picks by the players' average rating, like ranked. */
   difficulty: RoomDifficulty;
+  /** DSA problem or PROGRAMMING codebase; the host picks. */
+  mode: MatchMode;
 }
 
 export type RoomClosedReason = 'left' | 'host-left' | 'kicked' | 'start-failed';

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { Redis } from 'ioredis';
 import { E2E_REDIS_URL } from '../playwright.config';
+import { registerViaUi } from './helpers';
 
 // Registers a user, so reset the per-IP auth rate limits like battle.spec does.
 test.beforeEach(async () => {
@@ -24,18 +25,12 @@ test('landing: section links scroll in-page and a signed-in user is offered the 
   await page.goto('/');
   await page
     .getByRole('navigation', { name: 'Sections' })
-    .getByRole('link', { name: 'Arena' })
+    .getByRole('link', { name: 'Programming' })
     .click();
-  await expect(
-    page.getByRole('heading', { name: 'Built so the only variable is you.' }),
-  ).toBeInViewport();
+  await expect(page.getByRole('heading', { name: 'Debug a real codebase.' })).toBeInViewport();
 
   const username = `land${Date.now() % 100000}`;
-  await page.goto('/register');
-  await page.getByLabel('Username').fill(username);
-  await page.getByLabel('Email').fill(`${username}@e2e.test`);
-  await page.getByLabel('Password').fill('correct-horse-battery');
-  await page.getByRole('button', { name: 'Register' }).click();
+  await registerViaUi(page, username);
   await expect(page).toHaveURL(/\/play$/); // the lobby moved from / to /play
   await page.goto('/');
   await expect(page.getByRole('link', { name: 'Enter arena' })).toHaveAttribute('href', '/play');
@@ -50,6 +45,10 @@ test.describe('reduced motion', () => {
     await page.waitForTimeout(1500);
     await expect(page.locator('canvas')).toHaveCount(0);
     for (const title of [
+      'Algorithms, head to head.',
+      'Debug a real codebase.',
+      'Stuck? Ask the coach.',
+      'Bring a friend.',
       'From queue to verdict in one sitting.',
       'Every rating starts at 1500.',
       'The arena is open.',

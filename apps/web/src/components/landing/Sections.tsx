@@ -21,11 +21,11 @@ import {
 } from './icons';
 
 /** Giant faded type, like the footer's wordmark. */
-const ghost =
+export const ghost =
   'select-none bg-gradient-to-b from-ash-700 to-transparent bg-clip-text font-bold text-transparent';
 
 /** A section sits on a band of shadow that fades in and out: separation without any rule. */
-function Band({
+export function Band({
   id,
   children,
   className = '',
@@ -48,7 +48,7 @@ function Band({
   );
 }
 
-function SectionHeading(props: {
+export function SectionHeading(props: {
   index: string;
   eyebrow: string;
   title: string;
@@ -110,7 +110,7 @@ export function HowItWorks() {
   return (
     <Band id="how">
       <SectionHeading
-        index="01"
+        index="05"
         eyebrow="How it works"
         title="From queue to verdict in one sitting."
         kicker="queue. accept. code. bury."
@@ -177,7 +177,7 @@ export function Arena() {
       <div className="grid gap-16 lg:grid-cols-[0.85fr_1.15fr] lg:gap-24">
         <div className="lg:sticky lg:top-32 lg:self-start">
           <SectionHeading
-            index="02"
+            index="06"
             eyebrow="The arena"
             title="Built so the only variable is you."
             kicker="no lag to blame. no luck to thank."
@@ -261,7 +261,7 @@ function RatingSwing() {
 const RATING_FACTS = [
   { value: '1500', label: 'Where everyone starts' },
   { value: '±350', label: 'Starting uncertainty' },
-  { value: '1 tx', label: 'Result + rating' },
+  { value: '2', label: 'Global + campus' },
 ];
 
 export function Ranked() {
@@ -270,13 +270,14 @@ export function Ranked() {
       <div className="grid items-center gap-20 lg:grid-cols-2">
         <div>
           <SectionHeading
-            index="03"
+            index="07"
             eyebrow="Ranked"
             title="Every rating starts at 1500."
             kicker="every win is carved into someone else’s rating."
           >
             Glicko-2 tracks not just how good you are but how sure it is. Your first games move you
-            hundreds of points; by the time you are on the leaderboard, every win is earned.
+            hundreds of points. Then climb the global board, or the one for your own school or
+            college, where you only have to beat your campus.
           </SectionHeading>
           <motion.dl
             {...revealOnce}
@@ -362,7 +363,8 @@ export function FinalCta() {
           The arena is open.
         </h2>
         <p className="relative mx-auto mt-4 max-w-lg text-lg font-light text-ash-300">
-          Somebody just queued. Pick Python or C++ and make it their worst match.
+          Somebody just queued. Pick an algorithm or a broken codebase and make it their worst
+          match.
         </p>
         <div className="relative mt-10 flex flex-wrap justify-center gap-3">
           <Link
@@ -389,8 +391,9 @@ const FOOTER_LINKS: { title: string; links: { label: string; href: string }[] }[
     title: 'Product',
     links: [
       { label: 'How it works', href: '#how' },
-      { label: 'The arena', href: '#arena' },
-      { label: 'Ranked play', href: '#ranked' },
+      { label: 'DSA battles', href: '#dsa' },
+      { label: 'Programming', href: '#programming' },
+      { label: 'AI coach', href: '#coach' },
       { label: 'Leaderboard', href: '/leaderboard' },
     ],
   },
@@ -405,10 +408,10 @@ const FOOTER_LINKS: { title: string; links: { label: string; href: string }[] }[
 ];
 
 const STACK = [
-  'Python 3 & C++17',
+  'Python, C++17 & Node.js',
   'Docker-sandboxed judge',
   'Glicko-2 ratings',
-  'Server-side clock',
+  'Claude-powered hint coach',
 ];
 
 const footLink =
@@ -432,8 +435,8 @@ export function Footer() {
               THE<span className="text-azure">GRAVE</span>
             </Link>
             <p className="mt-4 text-sm font-light leading-relaxed text-ash-300">
-              Real-time 1v1 algorithm battles. Two coders, one problem, one clock the server
-              controls. The first fully accepted solution wins.
+              Real-time 1v1 battles on algorithms and broken codebases. Two coders, one clock the
+              server controls. The first full pass wins.
             </p>
             <p className="mt-6 inline-flex items-center gap-2 rounded-full bg-ash-800/80 px-3 py-1.5 text-xs text-ash-300">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden />

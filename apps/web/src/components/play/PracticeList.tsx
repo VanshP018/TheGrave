@@ -7,12 +7,12 @@ import { ChevronIcon } from '../battle/icons';
 import { focusRing } from '../ui';
 import { CheckCircleIcon, EyeIcon, LayersIcon, SearchIcon, ShuffleIcon, SortIcon } from './icons';
 
-const DIFF: Record<Difficulty, { label: string; tone: string }> = {
+export const DIFF: Record<Difficulty, { label: string; tone: string }> = {
   EASY: { label: 'Easy', tone: 'text-emerald-400' },
   MEDIUM: { label: 'Med.', tone: 'text-orange-400' },
   HARD: { label: 'Hard', tone: 'text-red-400' },
 };
-const DIFF_ORDER: Record<Difficulty, number> = { EASY: 0, MEDIUM: 1, HARD: 2 };
+export const DIFF_ORDER: Record<Difficulty, number> = { EASY: 0, MEDIUM: 1, HARD: 2 };
 
 type Status = 'all' | 'unsolved' | 'solved' | 'fresh';
 const STATUS: { id: Status; label: string }[] = [
@@ -34,11 +34,11 @@ const NEXT_SORT: Record<Sort, Sort> = {
   title: 'default',
 };
 
-const pill = `inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-full px-4 text-sm transition-colors ${focusRing}`;
-const control = `h-10 cursor-pointer rounded-full bg-white/[0.05] text-sm text-ink transition-colors hover:bg-white/[0.08] ${focusRing}`;
+export const pill = `inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-full px-4 text-sm transition-colors ${focusRing}`;
+export const control = `h-10 cursor-pointer rounded-full bg-white/[0.05] text-sm text-ink transition-colors hover:bg-white/[0.08] ${focusRing}`;
 
 /** Solved progress as a small ring next to the count. */
-function SolvedRing({ solved, total }: { solved: number; total: number }) {
+export function SolvedRing({ solved, total }: { solved: number; total: number }) {
   const r = 8;
   const c = 2 * Math.PI * r;
   return (

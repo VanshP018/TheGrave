@@ -2,6 +2,7 @@ import {
   normalizeRoomCode,
   ROOM_CODE_LENGTH,
   type Ack,
+  type MatchMode,
   type RoomDifficulty,
   type RoomPlayer,
   type RoomView,
@@ -166,6 +167,37 @@ function Room({ room }: { room: RoomView }) {
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-ash-400">
+                Battle {!isHost && '(host picks)'}
+              </p>
+              <div
+                className="mt-1.5 flex rounded-full bg-white/[0.05] p-1"
+                role="group"
+                aria-label="Room mode"
+              >
+                {(
+                  [
+                    ['DSA', 'DSA'],
+                    ['PROGRAMMING', 'Programming'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => void act('room:update', { mode: id })}
+                    disabled={!isHost || busy}
+                    aria-pressed={room.mode === id}
+                    className={`h-8 rounded-full px-3 text-xs font-medium transition-colors enabled:cursor-pointer disabled:cursor-default ${focusRing} ${
+                      room.mode === id
+                        ? 'bg-white/[0.1] text-azure'
+                        : 'text-ash-400 enabled:hover:text-ink'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-ash-400">
                 Difficulty {!isHost && '(host picks)'}
               </p>
               <div
@@ -248,7 +280,7 @@ function Room({ room }: { room: RoomView }) {
  * Private rooms (decision.md D-065), next to ranked matchmaking: create a room and share its code or
  * link, or join a friend's. `?room=CODE` in the URL joins straight away, which is what invite links do.
  */
-export function RoomPanel() {
+export function RoomPanel({ defaultMode = 'DSA' }: { defaultMode?: MatchMode }) {
   const room = useRoom((s) => s.room);
   const notice = useRoom((s) => s.notice);
   const connected = useLobby((s) => s.connected);
@@ -289,7 +321,7 @@ export function RoomPanel() {
   const create = async () => {
     setBusy(true);
     setError(null);
-    const res = await call<{ room: RoomView }>('room:create');
+    const res = await call<{ room: RoomView }>('room:create', { mode: defaultMode });
     setBusy(false);
     if (!res.ok) setError(res.message);
   };
@@ -309,7 +341,9 @@ export function RoomPanel() {
           <div>
             <p className="text-sm font-semibold text-ink">Private room</p>
             <p className="text-xs text-ash-400">
-              Challenge a friend with a code. Friendly matches don’t change ratings.
+              Challenge a friend with a code to a{' '}
+              {defaultMode === 'DSA' ? 'DSA problem' : 'debugging race'}. Friendly matches don’t
+              change ratings.
             </p>
           </div>
         </div>

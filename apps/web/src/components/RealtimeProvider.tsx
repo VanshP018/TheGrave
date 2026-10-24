@@ -5,7 +5,9 @@ import { useNavigate } from 'react-router';
 import { syncClock } from '../lib/clock';
 import { disconnectSocket, getSocket } from '../lib/socket';
 import { useLobby } from '../stores/lobby';
+import { useBattleUi } from '../stores/battle';
 import { useRoom } from '../stores/room';
+import { useAuth } from '../stores/auth';
 
 /**
  * One socket for the whole signed-in app (it must survive navigating lobby → battle).
@@ -27,17 +29,22 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     });
     s.on('disconnect', () => set({ connected: false }));
 
-    s.on('queue:joined', ({ joinedAt }) => set({ status: 'queued', joinedAt, notice: null }));
+    s.on('queue:joined', ({ joinedAt, mode }) =>
+      set({ status: 'queued', joinedAt, mode, notice: null }),
+    );
     s.on('queue:left', ({ reason }) =>
       set({
         status: 'idle',
         joinedAt: null,
+        mode: null,
         notice: reason === 'expired' ? 'You were removed from the queue (connection lost).' : null,
       }),
     );
-    s.on('queue:stats', ({ queued }) => set({ queued }));
-    s.on('match:found', ({ matchId, opponent, expiresAt }) =>
-      set({ status: 'ready', match: { id: matchId, opponent, expiresAt, accepted: [] } }),
+    s.on('queue:stats', ({ queued, mode }) =>
+      set({ queued: { ...useLobby.getState().queued, [mode]: queued } }),
+    );
+    s.on('match:found', ({ matchId, opponent, expiresAt, mode }) =>
+      set({ status: 'ready', mode, match: { id: matchId, opponent, expiresAt, accepted: [] } }),
     );
     s.on('match:accepted', ({ matchId, userId }) => {
       const m = useLobby.getState().match;
@@ -50,6 +57,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     s.on('match:cancelled', ({ reason, requeued }) =>
       set({
         status: requeued ? 'queued' : 'idle',
+        mode: requeued ? useLobby.getState().mode : null,
         match: null,
         notice: requeued
           ? 'Your opponent didn’t accept. Back in the queue, your place is kept.'
@@ -77,7 +85,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
     // Also sent on reconnect while a battle is live, so a reload anywhere lands back in the battle.
     s.on('battle:created', ({ matchId }) => {
-      set({ status: 'idle', match: null, notice: null });
+      set({ status: 'idle', mode: null, match: null, notice: null });
       setRoom({ room: null, notice: null });
       if (!window.location.pathname.startsWith(`/battle/${matchId}`))
         navigate(`/battle/${matchId}`);
@@ -90,6 +98,16 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         void qc.invalidateQueries({ queryKey: [key] });
     });
     s.on('submission:judged', ({ matchId }) => refetch(matchId));
+    s.on('battle:draw', ({ matchId, offeredBy, declinedBy }) => {
+      qc.setQueryData<BattleView>(
+        battleKey(matchId),
+        (v) => v && { ...v, drawOfferedBy: offeredBy },
+      );
+      if (declinedBy && declinedBy !== useAuth.getState().user?.id) {
+        useBattleUi.getState().set({ drawDeclined: true });
+        setTimeout(() => useBattleUi.getState().set({ drawDeclined: false }), 4000);
+      }
+    });
     s.on('battle:progress', ({ matchId, player }) =>
       qc.setQueryData<BattleView>(
         battleKey(matchId),

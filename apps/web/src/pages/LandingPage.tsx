@@ -2,6 +2,7 @@ import { MotionConfig } from 'framer-motion';
 import { GridBackground } from '../components/landing/GridBackground';
 import { Hero } from '../components/landing/Hero';
 import { LandingNav } from '../components/landing/LandingNav';
+import { CoachMode, DsaMode, ProgrammingMode, RoomsMode } from '../components/landing/Modes';
 import {
   Arena,
   FinalCta,
@@ -26,6 +27,10 @@ export default function LandingPage() {
           <LandingNav />
           <main>
             <Hero />
+            <DsaMode />
+            <ProgrammingMode />
+            <CoachMode />
+            <RoomsMode />
             <HowItWorks />
             <Arena />
             <Ranked />

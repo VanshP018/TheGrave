@@ -80,6 +80,67 @@ export class Leaderboard {
     return { rank: higher + 1, rating: Math.round(Number(score)) };
   }
 
+  /**
+   * The ranking among players of one school/college (decision.md D-079). The global sorted set can't be
+   * filtered by a column, so the institution's members come from Postgres and their scores from one
+   * ZMSCORE; ranks are competition ranks within the group. A school's roster is small next to the whole
+   * board, so this stays cheap; a per-institution sorted set would be the step up if rosters grew huge.
+   */
+  async pageForInstitution(
+    institution: string | null,
+    offset: number,
+    limit: number,
+    viewerId?: string,
+  ): Promise<LeaderboardPage> {
+    const empty: LeaderboardPage = {
+      scope: 'university',
+      institution,
+      total: 0,
+      offset,
+      entries: [],
+      me: null,
+    };
+    if (!institution) return empty;
+    const people = await prisma.user.findMany({
+      where: { institution: { equals: institution, mode: 'insensitive' }, ratedGames: { gt: 0 } },
+      select: {
+        id: true,
+        username: true,
+        institution: true,
+        ratingDev: true,
+        volatility: true,
+        rdUpdatedAt: true,
+        ratedGames: true,
+      },
+    });
+    if (!people.length) return empty;
+    const scores = await this.redis.zmscore(LB_KEY, ...people.map((u) => u.id));
+    const ranked = people
+      .map((u, i) => ({ u, score: scores[i] === null ? null : Number(scores[i]) }))
+      .filter((r): r is { u: (typeof people)[number]; score: number } => r.score !== null)
+      .sort((a, b) => b.score - a.score || a.u.username.localeCompare(b.u.username));
+
+    // Competition ranking: 1 + the number of strictly higher scores.
+    const rankOf = (score: number) => 1 + ranked.filter((r) => r.score > score).length;
+    const mine = viewerId ? ranked.find((r) => r.u.id === viewerId) : undefined;
+    return {
+      scope: 'university',
+      institution,
+      total: ranked.length,
+      offset,
+      me: mine ? { rank: rankOf(mine.score), rating: Math.round(mine.score) } : null,
+      entries: ranked.slice(offset, offset + limit).map(({ u, score }) => ({
+        rank: rankOf(score),
+        userId: u.id,
+        username: u.username,
+        rating: Math.round(score),
+        provisional: effectiveRd(u) > PROVISIONAL_RD,
+        games: u.ratedGames,
+        institution: u.institution,
+      })),
+    };
+  }
+
   async page(offset: number, limit: number, viewerId?: string): Promise<LeaderboardPage> {
     const [raw, total, me] = await Promise.all([
       this.redis.zrevrange(LB_KEY, offset, offset + limit - 1, 'WITHSCORES'),
@@ -99,6 +160,7 @@ export class Leaderboard {
         volatility: true,
         rdUpdatedAt: true,
         ratedGames: true,
+        institution: true,
       },
     });
     const byId = new Map(users.map((u) => [u.id, u]));
@@ -119,9 +181,10 @@ export class Leaderboard {
         rating: Math.round(m.score),
         provisional: effectiveRd(u) > PROVISIONAL_RD,
         games: u.ratedGames,
+        institution: u.institution,
       });
     });
-    return { total, offset, entries, me };
+    return { scope: 'global', institution: null, total, offset, entries, me };
   }
 }
 

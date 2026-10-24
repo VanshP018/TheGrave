@@ -66,7 +66,9 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
     const baseline = M.top + plotH;
     const games = points.length - 1;
     const xTicks = [...new Set([0, Math.round(games / 2), games])];
-    return { ticks, x, y, line, plotW, baseline, xTicks };
+    // The first time the highest rating was reached: ringed on the chart (decision.md D-073).
+    const peak = values.indexOf(hi);
+    return { ticks, x, y, line, plotW, baseline, xTicks, peak };
   }, [points, width]);
 
   if (points.length < 2) {
@@ -101,7 +103,7 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
             width={width}
             height={HEIGHT}
             role="img"
-            aria-label={`Rating over ${last} games, from ${points[0]!.rating} to ${points[last]!.rating}. Use arrow keys to inspect games.`}
+            aria-label={`Rating over ${last} games, from ${points[0]!.rating} to ${points[last]!.rating}, peak ${points[geo.peak]!.rating}. Use arrow keys to inspect games.`}
             tabIndex={0}
             onKeyDown={onKey}
             onFocus={() => setActive((a) => a ?? last)}
@@ -160,6 +162,46 @@ export function RatingChart({ points }: { points: RatingPoint[] }) {
                 strokeWidth={1}
               />
             )}
+            {/* Peak: a soft ring and a quiet label, instead of a separate "peak" stat. */}
+            {points.length > 1 &&
+              (() => {
+                const cx = geo.x(geo.peak);
+                const cy = geo.y(points[geo.peak]!.rating);
+                // Above the ring when there's headroom; otherwise beside it, where the line falls away
+                // from a peak (on the left near the right edge).
+                const above = cy - M.top > 26;
+                const right = cx < width - M.right - 90;
+                const pos: { x: number; y: number; anchor: 'start' | 'middle' | 'end' } = above
+                  ? {
+                      x: cx,
+                      y: cy - 16,
+                      anchor: cx > width - 60 ? 'end' : cx < M.left + 40 ? 'start' : 'middle',
+                    }
+                  : { x: right ? cx + 15 : cx - 15, y: cy + 4, anchor: right ? 'start' : 'end' };
+                return (
+                  <g data-testid="chart-peak">
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={9}
+                      fill={SERIES}
+                      fillOpacity={0.12}
+                      stroke={SERIES}
+                      strokeOpacity={0.8}
+                      strokeWidth={1.5}
+                    />
+                    <circle cx={cx} cy={cy} r={2.5} fill={SERIES} />
+                    <text
+                      x={pos.x}
+                      y={pos.y}
+                      textAnchor={pos.anchor}
+                      className="fill-ash-300 text-[11px] font-medium"
+                    >
+                      Peak {points[geo.peak]!.rating}
+                    </text>
+                  </g>
+                );
+              })()}
             {/* End dot (and the hovered point) with a 2px surface ring. */}
             {[last, ...(shown !== null && shown !== last ? [shown] : [])].map((i) => (
               <circle
