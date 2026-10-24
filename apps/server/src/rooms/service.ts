@@ -6,6 +6,8 @@ import {
   type Ack,
   type AckError,
   type Difficulty,
+  MATCH_MODES,
+  type MatchMode,
   type RoomDifficulty,
   type RoomPlayer,
   type RoomView,
@@ -31,8 +33,8 @@ const fail = (code: AckError, message: string) => ({ ok: false as const, code, m
 const BUSY_MESSAGE = (state: string) =>
   state.startsWith('room:')
     ? fail('IN_ROOM', 'You are already in a room')
-    : state === 'queued'
-      ? fail('ALREADY_IN_MATCH', 'Leave the ranked queue first')
+    : state.startsWith('queued')
+      ? fail('IN_QUEUE', 'Leave the ranked queue first')
       : fail('ALREADY_IN_MATCH', 'You are already in a match');
 
 /**
@@ -54,7 +56,7 @@ export class RoomService {
     this.opts = { ...DEFAULT_ROOM_OPTIONS, ...opts };
   }
 
-  async create(userId: string): Promise<Ack<{ room: RoomView }>> {
+  async create(userId: string, mode: MatchMode = 'DSA'): Promise<Ack<{ room: RoomView }>> {
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = Array.from(
         { length: ROOM_CODE_LENGTH },
@@ -64,6 +66,7 @@ export class RoomService {
         code,
         userId,
         this.opts.ttlMs,
+        MATCH_MODES.includes(mode) ? mode : 'DSA',
       ]);
       if (status === 'busy') return BUSY_MESSAGE(state!);
       if (status === 'ok') return this.joined(code);
@@ -101,13 +104,15 @@ export class RoomService {
 
   async update(
     userId: string,
-    patch: { difficulty?: unknown; ready?: unknown; kick?: unknown },
+    patch: { difficulty?: unknown; mode?: unknown; ready?: unknown; kick?: unknown },
   ): Promise<Ack> {
     let res: string[];
     if (patch.kick === true) {
       res = await roomScripts.update.run(this.redis, [userId, 'kick', '']);
     } else if (typeof patch.ready === 'boolean') {
       res = await roomScripts.update.run(this.redis, [userId, 'ready', patch.ready ? '1' : '0']);
+    } else if (MATCH_MODES.includes(patch.mode as MatchMode)) {
+      res = await roomScripts.update.run(this.redis, [userId, 'mode', patch.mode as string]);
     } else if (DIFFICULTIES.includes(patch.difficulty as RoomDifficulty)) {
       res = await roomScripts.update.run(this.redis, [
         userId,
@@ -133,15 +138,23 @@ export class RoomService {
     if (res[0] === 'none') return fail('ROOM_NOT_FOUND', 'You are not in a room');
     if (res[0] === 'denied')
       return fail('NOT_ALLOWED', 'Only the host can start, once the guest is ready');
-    const [, code, hostId, guestId, difficulty] = res as [string, string, string, string, string];
+    const [, code, hostId, guestId, difficulty, mode] = res as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      MatchMode,
+    ];
     const readyId = `room-${code}`;
     try {
       const players = await this.players([hostId, guestId]);
       await this.battle.createMatch(
-        { matchId: readyId, players: [players.get(hostId)!, players.get(guestId)!] },
+        { matchId: readyId, players: [players.get(hostId)!, players.get(guestId)!], mode },
         {
           difficulty: difficulty === 'AUTO' ? undefined : (difficulty as Difficulty),
           rated: false,
+          mode,
         },
       );
       return { ok: true };
@@ -189,6 +202,7 @@ export class RoomService {
       guest: h.guest ? (players.get(h.guest) ?? null) : null,
       guestReady: h.ready === '1',
       difficulty: (h.difficulty as RoomDifficulty) ?? 'AUTO',
+      mode: (h.mode as MatchMode) ?? 'DSA',
     };
   }
 

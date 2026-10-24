@@ -1,6 +1,8 @@
 # theGrave
 
-Real-time 1v1 coding battles. See [PLAN.md](./PLAN.md) for the roadmap and [decision.md](./decision.md) for the decision log.
+Real-time 1v1 coding battles: DSA problems and debugging real codebases, with ratings, private rooms and an AI hint coach. See [PLAN.md](./PLAN.md) for the roadmap and [decision.md](./decision.md) for the decision log.
+
+**Deploying?** [production.md](./production.md) is the step-by-step for putting it live on a server.
 
 ## Quickstart
 
@@ -13,6 +15,8 @@ pnpm --filter @thegrave/server db:migrate
 pnpm --filter @thegrave/server db:generate     # Prisma 7: migrate no longer generates the client
 pnpm --filter @thegrave/server db:seed         # 30 problems with hidden tests
 pnpm --filter @thegrave/server judge:build     # sandbox image for the code judge
+pnpm --filter @thegrave/server workspace:build # sandbox image for programming challenges
+docker compose up -d mailpit                   # local inbox for registration codes: http://localhost:8025 (see .env.example)
 pnpm dev                                       # api :4000, judge worker, web :5173 (landing at /, lobby at /play)
 pnpm test                                      # integration tests (needs infra:up; uses thegrave_test DB)
 pnpm exec playwright install chromium          # once

@@ -1,29 +1,77 @@
 import { z } from 'zod';
 
 // Fail fast on boot if the environment is misconfigured.
-const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().positive().default(4000),
-  CORS_ORIGIN: z.string().default('http://localhost:5173'),
-  DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().url(),
-  JWT_ACCESS_SECRET: z.string().min(32),
-  JWT_REFRESH_SECRET: z.string().min(32),
-  JWT_ACCESS_TTL: z.string().default('15m'),
-  JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(7),
-  EXECUTOR: z.enum(['docker']).default('docker'),
-  JUDGE_IMAGE: z.string().default('thegrave-judge:latest'),
-  // Optional OCI runtime for judge containers, e.g. `runsc` (gVisor) on dedicated judge hosts.
-  JUDGE_RUNTIME: z.string().optional(),
-  JUDGE_CONCURRENCY: z.coerce.number().int().positive().default(2),
-  // Backpressure: reject new submissions with 503 once this many are waiting.
-  JUDGE_QUEUE_MAX: z.coerce.number().int().positive().default(500),
-  // Battles (decision.md D-040..D-044). The duration override exists for E2E tests.
-  BATTLE_COUNTDOWN_MS: z.coerce.number().int().nonnegative().default(5000),
-  BATTLE_DURATION_MS: z.coerce.number().int().positive().optional(),
-  BATTLE_RECONNECT_GRACE_MS: z.coerce.number().int().positive().default(30_000),
-  BATTLE_SUBMIT_COOLDOWN_MS: z.coerce.number().int().nonnegative().default(5000),
-});
+export const envSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    PORT: z.coerce.number().int().positive().default(4000),
+    CORS_ORIGIN: z.string().default('http://localhost:5173'),
+    DATABASE_URL: z.string().url(),
+    REDIS_URL: z.string().url(),
+    JWT_ACCESS_SECRET: z.string().min(32),
+    JWT_REFRESH_SECRET: z.string().min(32),
+    JWT_ACCESS_TTL: z.string().default('15m'),
+    JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(7),
+    EXECUTOR: z.enum(['docker']).default('docker'),
+    JUDGE_IMAGE: z.string().default('thegrave-judge:latest'),
+    // Optional OCI runtime for judge containers, e.g. `runsc` (gVisor) on dedicated judge hosts.
+    JUDGE_RUNTIME: z.string().optional(),
+    JUDGE_CONCURRENCY: z.coerce.number().int().positive().default(2),
+    // Programming challenges' sandbox (decision.md D-066)
+    WORKSPACE_IMAGE: z.string().default('thegrave-workspace:latest'),
+    WORKSPACE_CONCURRENCY: z.coerce.number().int().positive().default(2),
+    // Backpressure: reject new submissions with 503 once this many are waiting.
+    JUDGE_QUEUE_MAX: z.coerce.number().int().positive().default(500),
+    // Battles (decision.md D-040..D-044). The duration override exists for E2E tests.
+    BATTLE_COUNTDOWN_MS: z.coerce.number().int().nonnegative().default(5000),
+    BATTLE_DURATION_MS: z.coerce.number().int().positive().optional(),
+    BATTLE_RECONNECT_GRACE_MS: z.coerce.number().int().positive().default(30_000),
+    BATTLE_SUBMIT_COOLDOWN_MS: z.coerce.number().int().nonnegative().default(5000),
+    // AI hint bot for practice challenges (decision.md D-075). Off unless a key is set; HINT_MODEL=fake is a
+    // deterministic stand-in for E2E and local dev.
+    ANTHROPIC_API_KEY: z.string().optional(),
+    HINT_MODEL: z.string().default('claude-sonnet-5-5'),
+    // Outgoing mail for registration codes (decision.md D-076). Without SMTP_HOST, development logs the
+    // message to the console and test writes to a Redis outbox; production refuses to boot.
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().positive().default(587),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    SMTP_SECURE: z
+      .enum(['true', 'false', '1', '0'])
+      .default('false')
+      .transform((v) => v === 'true' || v === '1'),
+    MAIL_FROM: z.string().default('TheGrave <no-reply@thegrave.dev>'),
+    // How many reverse proxies sit in front of the API (decision.md D-080). Behind Caddy that is 1; without
+    // it every user shares the proxy's IP and therefore one rate-limit bucket. `false` = no proxy.
+    TRUST_PROXY: z
+      .string()
+      .default('false')
+      .transform((v): boolean | number =>
+        v === 'true' ? true : v === 'false' ? false : Number.parseInt(v, 10),
+      )
+      .refine((v) => v === true || v === false || (Number.isInteger(v) && v >= 1), {
+        message: 'TRUST_PROXY must be true, false or a hop count like 1',
+      }),
+  })
+  // Production refuses to start with development leftovers (decision.md D-080).
+  .superRefine((c, ctx) => {
+    if (c.NODE_ENV !== 'production') return;
+    const fail = (path: string, message: string) =>
+      ctx.addIssue({ code: 'custom', path: [path], message });
+    if (!c.SMTP_HOST)
+      fail('SMTP_HOST', 'SMTP_HOST is required in production (registration codes are emailed)');
+    if (c.HINT_MODEL === 'fake') fail('HINT_MODEL', 'HINT_MODEL=fake is for tests and dev only');
+    if (!c.CORS_ORIGIN.startsWith('https://'))
+      fail('CORS_ORIGIN', 'CORS_ORIGIN must be the public https:// origin of the site');
+    if (c.JWT_ACCESS_SECRET === c.JWT_REFRESH_SECRET)
+      fail('JWT_REFRESH_SECRET', 'the access and refresh secrets must differ');
+    for (const k of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'] as const)
+      if (/change-?me|secret|password|example/i.test(c[k]))
+        fail(k, `${k} looks like a placeholder; generate one with: openssl rand -base64 48`);
+    if (/grave:grave@/.test(c.DATABASE_URL))
+      fail('DATABASE_URL', 'DATABASE_URL still uses the development password');
+  });
 
 export const config = envSchema.parse(process.env);
 export type Config = typeof config;

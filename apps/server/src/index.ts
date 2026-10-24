@@ -13,6 +13,15 @@ const shutdown = async (signal: string) => {
   await Promise.all([prisma.$disconnect(), redis.quit()]);
   process.exit(0);
 };
+// A crash should be loud and restart cleanly (the orchestrator restarts the process), not limp on.
+process.on('unhandledRejection', (err) => {
+  app.log.fatal({ err }, 'unhandled rejection');
+  process.exit(1);
+});
+process.on('uncaughtException', (err) => {
+  app.log.fatal({ err }, 'uncaught exception');
+  process.exit(1);
+});
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 

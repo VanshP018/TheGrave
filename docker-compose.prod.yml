@@ -1,0 +1,130 @@
+# Production stack on ONE host (decision.md D-080). Use with: docker compose --env-file .env.production ...
+# See production.md for the full walkthrough, and for splitting the judge workers onto their own machine.
+name: thegrave-prod
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+# Everything the server and worker read. `:?` makes compose stop with a clear message when a value is missing.
+x-app-env: &app-env
+  NODE_ENV: production
+  PORT: "4000"
+  TRUST_PROXY: "1"
+  CORS_ORIGIN: https://${DOMAIN:?set DOMAIN in .env.production}
+  DATABASE_URL: postgresql://thegrave:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/thegrave?schema=public
+  REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET}
+  JUDGE_IMAGE: thegrave-judge:latest
+  WORKSPACE_IMAGE: thegrave-workspace:latest
+  JUDGE_CONCURRENCY: ${JUDGE_CONCURRENCY:-2}
+  WORKSPACE_CONCURRENCY: ${WORKSPACE_CONCURRENCY:-2}
+  SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM to a sender verified at your mail provider}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  HINT_MODEL: ${HINT_MODEL:-claude-sonnet-5-5}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: thegrave
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: thegrave
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thegrave -d thegrave"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    logging: *logging
+
+  # Runs once per release, before the API starts; the API waits for it to finish.
+  migrate:
+    build: { context: ., dockerfile: deploy/Dockerfile.server, target: migrate }
+    image: thegrave-migrate:latest
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://thegrave:${POSTGRES_PASSWORD}@postgres:5432/thegrave?schema=public
+    depends_on:
+      postgres: { condition: service_healthy }
+    logging: *logging
+
+  api:
+    build: { context: ., dockerfile: deploy/Dockerfile.server, target: api }
+    image: thegrave-api:latest
+    restart: unless-stopped
+    environment: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  # Judges code in throwaway sandbox containers started on THIS host's Docker daemon. Mounting the socket
+  # is root-equivalent on the host: run this service on a machine that holds nothing else of value
+  # (see production.md, "Judge host").
+  worker:
+    build: { context: ., dockerfile: deploy/Dockerfile.server, target: worker }
+    image: thegrave-worker:latest
+    restart: unless-stopped
+    environment: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  web:
+    build: { context: ., dockerfile: deploy/Dockerfile.web }
+    image: thegrave-web:latest
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-${DOMAIN}}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on:
+      api: { condition: service_healthy }
+    logging: *logging
+
+  # `docker compose --profile images build` builds the two sandbox images the worker launches.
+  judge-image:
+    profiles: [images]
+    build: { context: apps/server/judge }
+    image: thegrave-judge:latest
+    entrypoint: ["true"]
+  workspace-image:
+    profiles: [images]
+    build: { context: apps/server/workspace }
+    image: thegrave-workspace:latest
+    entrypoint: ["true"]
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

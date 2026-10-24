@@ -11,7 +11,7 @@ export async function setupApp(): Promise<FastifyInstance> {
 }
 
 export async function resetState() {
-  await prisma.$executeRawUnsafe('TRUNCATE "RefreshToken", "User", "Problem" CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE "RefreshToken", "User", "Problem", "Project" CASCADE');
   await redis.flushdb();
 }
 
@@ -28,14 +28,35 @@ export const alice = {
   username: 'alice',
   email: 'alice@example.com',
   password: 'correct-horse-battery',
+  institution: 'Test University',
 };
 
-/** Registers a user and returns a bearer header for them. */
+/** Newest emailed code for an address, read from the test outbox (OutboxMailer). */
+export async function latestCode(email: string): Promise<string> {
+  for (const raw of await redis.lrange('test:outbox', 0, -1)) {
+    const msg = JSON.parse(raw) as { to: string; text: string };
+    if (msg.to === email) return /\b(\d{6})\b/.exec(msg.text)![1]!;
+  }
+  throw new Error(`No email for ${email} in the outbox`);
+}
+
+/** Registers a user through the full email-code flow and returns a bearer header for them. */
 export async function registerUser(app: FastifyInstance, username: string) {
-  const res = await app.inject({
+  const email = `${username}@example.com`;
+  await app.inject({
     method: 'POST',
     url: '/api/auth/register',
-    payload: { username, email: `${username}@example.com`, password: 'correct-horse-battery' },
+    payload: {
+      username,
+      email,
+      password: 'correct-horse-battery',
+      institution: 'Test University',
+    },
+  });
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register/verify',
+    payload: { email, code: await latestCode(email) },
   });
   return { authorization: `Bearer ${res.json().accessToken as string}` };
 }

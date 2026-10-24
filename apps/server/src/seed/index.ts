@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { buildTestCases, STARTER_CODE } from './build.js';
 import { problems } from './problems.js';
+import { projectData, projects } from './projects.js';
 import { TAGS } from './tags.js';
 
 // Idempotent: upserts problems by slug and replaces their test cases.
@@ -33,4 +34,14 @@ for (const def of problems) {
   );
 }
 console.log(`seeded ${problems.length} problems`);
+for (const def of projects) {
+  const data = projectData(def);
+  await prisma.project.upsert({
+    where: { slug: def.slug },
+    create: { slug: def.slug, ...data },
+    update: data,
+  });
+  console.log(`project ${def.slug.padEnd(24)} ${data.hiddenTestCount} hidden tests`);
+}
+console.log(`seeded ${projects.length} projects`);
 await prisma.$disconnect();

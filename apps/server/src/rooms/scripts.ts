@@ -5,7 +5,7 @@ import type { Redis } from 'ioredis';
  * Private-room state, mutated only by these Lua scripts so every transition is atomic across API nodes
  * (decision.md D-065, mirroring the matchmaker's D-034).
  *
- *   room:{code}       HASH   host, guest ('' when empty), ready ('0' | '1'), difficulty
+ *   room:{code}       HASH   host, guest ('' when empty), ready ('0' | '1'), difficulty, mode (DSA | PROGRAMMING)
  *   user:{id}:state   STRING 'room:{code}' while in a room, the same key the matchmaker uses, so a user
  *                            can never be queued and in a room at once
  *
@@ -20,13 +20,13 @@ local function roomOf(u)
 end
 `;
 
-/** ARGV: code, userId, ttlMs → {'ok'} | {'busy', state} | {'taken'} */
+/** ARGV: code, userId, ttlMs, mode → {'ok'} | {'busy', state} | {'taken'} */
 const CREATE = `
-local c, u, ttl = ARGV[1], ARGV[2], tonumber(ARGV[3])
+local c, u, ttl, mode = ARGV[1], ARGV[2], tonumber(ARGV[3]), ARGV[4]
 local st = redis.call('GET', stateKey(u))
 if st then return {'busy', st} end
 if redis.call('EXISTS', roomKey(c)) == 1 then return {'taken'} end
-redis.call('HSET', roomKey(c), 'host', u, 'guest', '', 'ready', '0', 'difficulty', 'AUTO')
+redis.call('HSET', roomKey(c), 'host', u, 'guest', '', 'ready', '0', 'difficulty', 'AUTO', 'mode', mode)
 redis.call('PEXPIRE', roomKey(c), ttl)
 redis.call('SET', stateKey(u), 'room:' .. c, 'PX', ttl)
 return {'ok'}
@@ -66,9 +66,9 @@ return {'left', c, h[1]}
 `;
 
 /**
- * ARGV: userId, field ('difficulty' | 'ready' | 'kick'), value
+ * ARGV: userId, field ('difficulty' | 'mode' | 'ready' | 'kick'), value
  * → {'ok', code} | {'kicked', code, guest} | {'none'} | {'denied'}
- * The host sets difficulty and kicks; only the guest sets ready.
+ * The host sets difficulty and mode (a new mode un-readies the guest) and kicks; only the guest sets ready.
  */
 const UPDATE = `
 local u, f, v = ARGV[1], ARGV[2], ARGV[3]
@@ -79,6 +79,9 @@ if not h[1] then return {'none'} end
 if f == 'difficulty' then
   if h[1] ~= u then return {'denied'} end
   redis.call('HSET', roomKey(c), 'difficulty', v)
+elseif f == 'mode' then
+  if h[1] ~= u then return {'denied'} end
+  redis.call('HSET', roomKey(c), 'mode', v, 'ready', '0')
 elseif f == 'ready' then
   if h[2] ~= u then return {'denied'} end
   redis.call('HSET', roomKey(c), 'ready', v)
@@ -93,19 +96,19 @@ end
 return {'ok', c}
 `;
 
-/** ARGV: userId, ttlMs → {'ok', code, host, guest, difficulty} | {'none'} | {'denied'} */
+/** ARGV: userId, ttlMs → {'ok', code, host, guest, difficulty, mode} | {'none'} | {'denied'} */
 const START = `
 local u, ttl = ARGV[1], tonumber(ARGV[2])
 local c = roomOf(u)
 if not c then return {'none'} end
-local h = redis.call('HMGET', roomKey(c), 'host', 'guest', 'ready', 'difficulty')
+local h = redis.call('HMGET', roomKey(c), 'host', 'guest', 'ready', 'difficulty', 'mode')
 if not h[1] then return {'none'} end
 if h[1] ~= u or h[2] == '' or h[3] ~= '1' then return {'denied'} end
 if redis.call('GET', stateKey(h[2])) ~= 'room:' .. c then return {'denied'} end
 redis.call('DEL', roomKey(c))
 redis.call('SET', stateKey(h[1]), 'match:room-' .. c, 'PX', ttl)
 redis.call('SET', stateKey(h[2]), 'match:room-' .. c, 'PX', ttl)
-return {'ok', c, h[1], h[2], h[4]}
+return {'ok', c, h[1], h[2], h[4], h[5] or 'DSA'}
 `;
 
 class LuaScript {

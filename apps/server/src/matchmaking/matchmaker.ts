@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type { Opponent, QueueLeftReason, ServerToClientEvents } from '@thegrave/shared';
+import type { MatchMode, Opponent, QueueLeftReason, ServerToClientEvents } from '@thegrave/shared';
 import type { Redis } from 'ioredis';
 import { prisma } from '../lib/prisma.js';
-import { scripts } from './scripts.js';
+import { keysFor, queuedState, scripts } from './scripts.js';
 
 export interface MatchmakerOptions {
+  /** Which queue this instance runs; every mode has its own (decision.md D-067). */
+  mode: MatchMode;
   /** Rating window: ±base, widening by `step` every `stepMs` of waiting, capped at ±max. */
   windowBase: number;
   windowStep: number;
@@ -20,6 +22,7 @@ export interface MatchmakerOptions {
 }
 
 export const DEFAULT_MATCHMAKER_OPTIONS: MatchmakerOptions = {
+  mode: 'DSA',
   windowBase: 50,
   windowStep: 25,
   windowStepMs: 5000,
@@ -40,11 +43,12 @@ export interface Notifier {
 export interface ConfirmedMatch {
   matchId: string;
   players: [Opponent, Opponent];
+  mode: MatchMode;
 }
 
 export type JoinResult =
   | { ok: true; joinedAt: number; already: boolean }
-  | { ok: false; code: 'ALREADY_IN_MATCH' | 'IN_ROOM' };
+  | { ok: false; code: 'ALREADY_IN_MATCH' | 'IN_ROOM' | 'IN_QUEUE' };
 
 export type UserState =
   | { state: 'idle' }
@@ -53,8 +57,6 @@ export type UserState =
   | { state: 'match'; matchId: string }
   /** In a private room (decision.md D-065); rooms own this state, matchmaking only respects it. */
   | { state: 'room'; code: string };
-
-const LOCK_KEY = 'mm:tick-lock';
 
 export class Matchmaker {
   readonly nodeId = randomUUID();
@@ -74,6 +76,14 @@ export class Matchmaker {
     opts: Partial<MatchmakerOptions> = {},
   ) {
     this.opts = { ...DEFAULT_MATCHMAKER_OPTIONS, ...opts };
+    this.keys = keysFor(this.opts.mode);
+    this.lockKey = this.opts.mode === 'DSA' ? 'mm:tick-lock' : 'mm:programming:tick-lock';
+  }
+
+  private readonly keys: string[];
+  private readonly lockKey: string;
+  get mode(): MatchMode {
+    return this.opts.mode;
   }
 
   start() {
@@ -102,31 +112,38 @@ export class Matchmaker {
       where: { id: userId },
       select: { rating: true },
     });
-    const [status, value] = await scripts.join.run<[string, string]>(this.redis, [
-      userId,
-      rating,
-      this.opts.leaseMs,
-    ]);
+    const [status, value] = await scripts.join.run<[string, string]>(
+      this.redis,
+      [userId, rating, this.opts.leaseMs],
+      this.keys,
+    );
     if (status === 'busy')
-      return { ok: false, code: value.startsWith('room:') ? 'IN_ROOM' : 'ALREADY_IN_MATCH' };
+      return {
+        ok: false,
+        code: value.startsWith('room:')
+          ? 'IN_ROOM'
+          : value.startsWith('queued')
+            ? 'IN_QUEUE'
+            : 'ALREADY_IN_MATCH',
+      };
     const joinedAt = Number(value);
     // Every tab of the user learns about it, not just the one that clicked.
-    this.notify.toUser(userId, 'queue:joined', { joinedAt });
+    this.notify.toUser(userId, 'queue:joined', { joinedAt, mode: this.mode });
     return { ok: true, joinedAt, already: status === 'already' };
   }
 
   async leave(userId: string, reason: QueueLeftReason = 'requested'): Promise<boolean> {
-    const removed = (await scripts.leave.run<number>(this.redis, [userId])) === 1;
-    if (removed) this.notify.toUser(userId, 'queue:left', { reason });
+    const removed = (await scripts.leave.run<number>(this.redis, [userId], this.keys)) === 1;
+    if (removed) this.notify.toUser(userId, 'queue:left', { reason, mode: this.mode });
     return removed;
   }
 
   async accept(matchId: string, userId: string): Promise<boolean> {
-    const res = await scripts.accept.run<string[]>(this.redis, [
-      matchId,
-      userId,
-      this.opts.matchStateTtlMs,
-    ]);
+    const res = await scripts.accept.run<string[]>(
+      this.redis,
+      [matchId, userId, this.opts.matchStateTtlMs],
+      this.keys,
+    );
     if (res[0] === 'gone') return false;
     const [, a, b, ra, rb] = res as [string, string, string, string?, string?];
     for (const u of [a, b]) this.notify.toUser(u, 'match:accepted', { matchId, userId });
@@ -138,17 +155,17 @@ export class Matchmaker {
       const [pa, pb] = [players.get(a)!, players.get(b)!];
       this.notify.toUser(a, 'match:confirmed', { matchId, opponent: pb });
       this.notify.toUser(b, 'match:confirmed', { matchId, opponent: pa });
-      await this.hooks.onConfirmed({ matchId, players: [pa, pb] });
+      await this.hooks.onConfirmed({ matchId, players: [pa, pb], mode: this.mode });
     }
     return true;
   }
 
   async decline(matchId: string, userId: string): Promise<boolean> {
-    const res = await scripts.decline.run<string[]>(this.redis, [
-      matchId,
-      userId,
-      this.opts.leaseMs,
-    ]);
+    const res = await scripts.decline.run<string[]>(
+      this.redis,
+      [matchId, userId, this.opts.leaseMs],
+      this.keys,
+    );
     if (res[0] === 'gone') return false;
     const [, other, requeued] = res as [string, string, number];
     this.notify.toUser(userId, 'match:cancelled', { matchId, reason: 'declined', requeued: false });
@@ -162,24 +179,25 @@ export class Matchmaker {
 
   /** Clears `match:{id}` state so the players can queue again (Phase 4 calls this when a battle ends). */
   async release(matchId: string, userIds: string[]): Promise<number> {
-    return scripts.release.run<number>(this.redis, [matchId, ...userIds]);
+    return scripts.release.run<number>(this.redis, [matchId, ...userIds], this.keys);
   }
 
   /** Re-keys the players' `match:{readyId}` state to the persisted Match id, atomically. */
   async rebind(fromId: string, toId: string, userIds: string[]): Promise<number> {
-    return scripts.rebind.run<number>(this.redis, [
-      fromId,
-      toId,
-      this.opts.matchStateTtlMs,
-      ...userIds,
-    ]);
+    return scripts.rebind.run<number>(
+      this.redis,
+      [fromId, toId, this.opts.matchStateTtlMs, ...userIds],
+      this.keys,
+    );
   }
 
   async describe(userId: string): Promise<UserState> {
-    const res = await scripts.describe.run<string[]>(this.redis, [userId]);
+    const res = await scripts.describe.run<string[]>(this.redis, [userId], this.keys);
     const [st] = res;
     if (!st) return { state: 'idle' };
-    if (st === 'queued') return { state: 'queued', joinedAt: Number(res[1]) };
+    if (st === queuedState(this.mode)) return { state: 'queued', joinedAt: Number(res[1]) };
+    // The other mode's queue: not ours to describe.
+    if (st.startsWith('queued')) return { state: 'idle' };
     if (st.startsWith('ready:')) {
       const [, id, a, b, ra, rb, deadline] = res as string[];
       if (!a || !deadline) return { state: 'idle' };
@@ -197,7 +215,7 @@ export class Matchmaker {
   /** Only one node per tick interval does the work; the Lua script is atomic regardless (D-034). */
   async tickWithLock(): Promise<boolean> {
     const got = await this.redis.set(
-      LOCK_KEY,
+      this.lockKey,
       this.nodeId,
       'PX',
       Math.max(50, this.opts.tickMs - 50),
@@ -217,18 +235,23 @@ export class Matchmaker {
         [string, string, string, string, string, string][],
         number,
       ]
-    >(this.redis, [
-      o.windowBase,
-      o.windowStep,
-      o.windowStepMs,
-      o.windowMax,
-      o.readyTimeoutMs,
-      o.leaseMs,
-      o.maxPairsPerTick,
-      o.readyTimeoutMs + 60_000,
-    ]);
+    >(
+      this.redis,
+      [
+        o.windowBase,
+        o.windowStep,
+        o.windowStepMs,
+        o.windowMax,
+        o.readyTimeoutMs,
+        o.leaseMs,
+        o.maxPairsPerTick,
+        o.readyTimeoutMs + 60_000,
+      ],
+      this.keys,
+    );
 
-    for (const u of purged) this.notify.toUser(u, 'queue:left', { reason: 'expired' });
+    for (const u of purged)
+      this.notify.toUser(u, 'queue:left', { reason: 'expired', mode: this.mode });
 
     for (const [matchId, a, accA, b, accB] of expired) {
       this.notify.toUser(a, 'match:cancelled', {
@@ -252,12 +275,23 @@ export class Matchmaker {
       );
       for (const [matchId, a, , b, , deadline] of pairs) {
         const expiresAt = Number(deadline);
-        this.notify.toUser(a, 'match:found', { matchId, opponent: players.get(b)!, expiresAt });
-        this.notify.toUser(b, 'match:found', { matchId, opponent: players.get(a)!, expiresAt });
+        const mode = this.mode;
+        this.notify.toUser(a, 'match:found', {
+          matchId,
+          opponent: players.get(b)!,
+          expiresAt,
+          mode,
+        });
+        this.notify.toUser(b, 'match:found', {
+          matchId,
+          opponent: players.get(a)!,
+          expiresAt,
+          mode,
+        });
       }
     }
 
-    this.notify.broadcast('queue:stats', { queued });
+    this.notify.broadcast('queue:stats', { queued, mode: this.mode });
     return { purged, expired: expired.length, paired: pairs.length, queued };
   }
 
@@ -267,7 +301,7 @@ export class Matchmaker {
     if (!ids.length) return;
     const [sec, micro] = await this.redis.time();
     const until = Number(sec) * 1000 + Math.floor(Number(micro) / 1000) + this.opts.leaseMs;
-    await this.redis.zadd('mm:lease', 'XX', ...ids.flatMap((id) => [until, id]));
+    await this.redis.zadd(this.keys[2]!, 'XX', ...ids.flatMap((id) => [until, id]));
   }
 
   private async opponents(entries: [string, number][]): Promise<Map<string, Opponent>> {

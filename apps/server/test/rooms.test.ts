@@ -197,7 +197,7 @@ describe('private rooms', () => {
     expect((await call(third.socket, 'queue:join')).ok).toBe(true);
     expect(await call(third.socket, 'room:create')).toMatchObject({
       ok: false,
-      code: 'ALREADY_IN_MATCH',
+      code: 'IN_QUEUE',
     });
     await call(third.socket, 'queue:leave');
     await call(host.socket, 'room:leave');

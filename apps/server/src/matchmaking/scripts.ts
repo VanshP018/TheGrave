@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { MatchMode } from '@thegrave/shared';
 import type { Redis } from 'ioredis';
 
 /**
@@ -11,15 +12,30 @@ import type { Redis } from 'ioredis';
  *   mm:ready:deadlines  ZSET  readyId -> deadline (ms)
  *   mm:seq              STRING counter for ready-check ids
  *   mm:ready:{id}       HASH  a, b, ra, rb, ja, jb, acc_a, acc_b
- *   user:{id}:state     STRING 'queued' | 'ready:{id}' | 'match:{id}'
+ *   user:{id}:state     STRING 'queued' | 'queued:programming' | 'ready:{id}' | 'match:{id}' | 'room:{code}'
+ *
+ * Each mode has its own queue (decision.md D-067): the DSA keys above, and the same set prefixed
+ * `mm:programming:` for programming battles. `mm:seq`, the ready hashes and the user state are shared, so
+ * ready ids never collide and a user can be in at most one queue, ready check, room or match.
  *
  * Time always comes from Redis TIME, so node clock skew cannot affect windows or deadlines.
  * Keys built inside scripts (user state, ready hashes) assume a single Redis, not Redis Cluster.
  */
-export const KEYS = ['mm:queue', 'mm:joined', 'mm:lease', 'mm:ready:deadlines', 'mm:seq'] as const;
+export const KEYS = ['mm:queue', 'mm:joined', 'mm:lease', 'mm:ready:deadlines', 'mm:seq', 'DSA'];
+
+/** The key set for one mode's queue; KEYS[6] carries the mode into the scripts. */
+export function keysFor(mode: MatchMode): string[] {
+  if (mode === 'DSA') return KEYS;
+  const p = 'mm:programming:';
+  return [`${p}queue`, `${p}joined`, `${p}lease`, `${p}ready:deadlines`, 'mm:seq', mode];
+}
+
+/** The user-state value meaning "in this mode's queue". DSA keeps the original 'queued'. */
+export const queuedState = (mode: MatchMode) => (mode === 'DSA' ? 'queued' : 'queued:programming');
 
 const PRELUDE = `
 local Q, J, L, D, SEQ = KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5]
+local QUEUED = KEYS[6] == 'DSA' and 'queued' or 'queued:programming'
 local function nowMs()
   local t = redis.call('TIME')
   return tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
@@ -35,7 +51,7 @@ local function enqueue(u, rating, joinedAt, leaseUntil)
   redis.call('ZADD', Q, rating, u)
   redis.call('ZADD', J, joinedAt, u)
   redis.call('ZADD', L, leaseUntil, u)
-  redis.call('SET', stateKey(u), 'queued')
+  redis.call('SET', stateKey(u), QUEUED)
 end
 `;
 
@@ -44,7 +60,7 @@ const JOIN = `
 local u, rating, leaseMs = ARGV[1], ARGV[2], tonumber(ARGV[3])
 local now = nowMs()
 local st = redis.call('GET', stateKey(u))
-if st and st ~= 'queued' then return {'busy', st} end
+if st and st ~= QUEUED then return {'busy', st} end
 local joined = redis.call('ZSCORE', J, u)
 if joined then
   redis.call('ZADD', L, now + leaseMs, u)
@@ -60,7 +76,7 @@ local u = ARGV[1]
 local removed = redis.call('ZREM', J, u)
 redis.call('ZREM', Q, u)
 redis.call('ZREM', L, u)
-if redis.call('GET', stateKey(u)) == 'queued' then redis.call('DEL', stateKey(u)) end
+if redis.call('GET', stateKey(u)) == QUEUED then redis.call('DEL', stateKey(u)) end
 return removed
 `;
 
@@ -77,7 +93,7 @@ local now = nowMs()
 local purged = redis.call('ZRANGEBYSCORE', L, '-inf', now)
 for _, u in ipairs(purged) do
   dequeue(u)
-  if redis.call('GET', stateKey(u)) == 'queued' then redis.call('DEL', stateKey(u)) end
+  if redis.call('GET', stateKey(u)) == QUEUED then redis.call('DEL', stateKey(u)) end
 end
 
 -- 2. Expire ready checks: players who accepted go back to the queue with their original joinedAt,
@@ -217,7 +233,7 @@ const DESCRIBE = `
 local u = ARGV[1]
 local st = redis.call('GET', stateKey(u))
 if not st then return {} end
-if st == 'queued' then return {st, redis.call('ZSCORE', J, u) or ''} end
+if st == QUEUED then return {st, redis.call('ZSCORE', J, u) or ''} end
 local id = string.match(st, '^ready:(.+)$')
 if id then
   local h = redis.call('HMGET', readyKey(id), 'a', 'b', 'ra', 'rb')
@@ -232,12 +248,12 @@ class LuaScript {
     this.sha = createHash('sha1').update(source).digest('hex');
   }
   /** EVALSHA with a one-time EVAL fallback after a Redis restart/flush (NOSCRIPT). */
-  async run<T>(redis: Redis, args: (string | number)[]): Promise<T> {
+  async run<T>(redis: Redis, args: (string | number)[], keys: string[] = KEYS): Promise<T> {
     try {
-      return (await redis.evalsha(this.sha, KEYS.length, ...KEYS, ...args)) as T;
+      return (await redis.evalsha(this.sha, keys.length, ...keys, ...args)) as T;
     } catch (err) {
       if (!(err instanceof Error) || !err.message.includes('NOSCRIPT')) throw err;
-      return (await redis.eval(this.source, KEYS.length, ...KEYS, ...args)) as T;
+      return (await redis.eval(this.source, keys.length, ...keys, ...args)) as T;
     }
   }
 }

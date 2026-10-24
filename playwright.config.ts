@@ -17,6 +17,8 @@ const backendEnv = {
   BATTLE_DURATION_MS: '20000',
   BATTLE_RECONNECT_GRACE_MS: '4000',
   BATTLE_SUBMIT_COOLDOWN_MS: '1000',
+  // Deterministic hint bot, no API key needed (decision.md D-075).
+  HINT_MODEL: 'fake',
 };
 
 export const E2E_REDIS_URL = backendEnv.REDIS_URL;

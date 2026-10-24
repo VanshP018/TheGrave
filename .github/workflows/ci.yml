@@ -1,0 +1,104 @@
+# Continuous integration (decision.md D-080). Every push and pull request must pass lint, types, build and the
+# test suites before it is merged or deployed.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, types and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @thegrave/shared build
+      - run: pnpm --filter @thegrave/server exec prisma generate
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+
+  server-tests:
+    name: Server tests
+    runs-on: ubuntu-latest
+    # Postgres and Redis on the ports the test config expects. The judge tests start real Docker containers,
+    # which the runner provides.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: grave, POSTGRES_PASSWORD: grave, POSTGRES_DB: thegrave }
+        ports: ["5442:5432"]
+        options: >-
+          --health-cmd "pg_isready -U grave" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports: ["6389:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @thegrave/shared build
+      - run: pnpm --filter @thegrave/server exec prisma generate
+      - run: pnpm --filter @thegrave/server test
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    needs: [check]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: grave, POSTGRES_PASSWORD: grave, POSTGRES_DB: thegrave }
+        ports: ["5442:5432"]
+        options: >-
+          --health-cmd "pg_isready -U grave" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports: ["6389:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @thegrave/shared build
+      - run: pnpm --filter @thegrave/server exec prisma generate
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+
+  # Proves the production images still build (they are what actually ships).
+  images:
+    name: Production images build
+    runs-on: ubuntu-latest
+    needs: [check]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f deploy/Dockerfile.server --target api -t thegrave-api:ci .
+      - run: docker build -f deploy/Dockerfile.server --target worker -t thegrave-worker:ci .
+      - run: docker build -f deploy/Dockerfile.web -t thegrave-web:ci .

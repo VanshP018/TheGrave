@@ -11,10 +11,18 @@ import { redis } from './lib/redis.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { AuthError } from './modules/auth/service.js';
 import { problemRoutes } from './modules/problems/routes.js';
+import type { HintModel } from './hints/model.js';
+import { projectRoutes } from './modules/projects/routes.js';
+import { profileRoutes } from './modules/users/routes.js';
 import authenticate from './plugins/authenticate.js';
 
-export async function buildApp() {
+export async function buildApp(opts: { hintModel?: HintModel | null } = {}) {
   const app = Fastify({
+    // A hop count N means "trust the N nearest proxies": the client IP is the first address beyond them.
+    trustProxy:
+      typeof config.TRUST_PROXY === 'number'
+        ? (_addr: string, hop: number) => hop < (config.TRUST_PROXY as number)
+        : config.TRUST_PROXY,
     logger:
       config.NODE_ENV === 'development'
         ? { transport: { target: 'pino-pretty' } }
@@ -37,9 +45,20 @@ export async function buildApp() {
       return reply.code(400).send(body);
     }
     if (err instanceof AuthError) {
+      if (err.retryAfterMs !== undefined)
+        reply.header('Retry-After', Math.ceil(err.retryAfterMs / 1000));
+      const error = {
+        400: 'Bad Request',
+        401: 'Unauthorized',
+        404: 'Not Found',
+        409: 'Conflict',
+        429: 'Too Many Requests',
+      }[err.statusCode];
       return reply.code(err.statusCode).send({
-        error: err.statusCode === 401 ? 'Unauthorized' : 'Conflict',
+        error,
         message: err.message,
+        ...err.extra,
+        ...(err.retryAfterMs !== undefined && { retryAfterMs: err.retryAfterMs }),
       });
     }
     const status = (err as { statusCode?: number }).statusCode ?? 500;
@@ -50,7 +69,8 @@ export async function buildApp() {
     });
   });
 
-  app.get('/health', async (_req, reply) => {
+  // Probes hit this every few seconds from Docker and the proxy; keep them out of the request log.
+  app.get('/health', { logLevel: 'silent' }, async (_req, reply) => {
     const [db, cache] = await Promise.allSettled([prisma.$queryRaw`SELECT 1`, redis.ping()]);
     const ok = db.status === 'fulfilled' && cache.status === 'fulfilled';
     return reply.code(ok ? 200 : 503).send({
@@ -64,6 +84,8 @@ export async function buildApp() {
   // behind the Vite dev proxy and the production reverse proxy. /health stays at the root for probes.
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(problemRoutes, { prefix: '/api' });
+  await app.register(projectRoutes, { prefix: '/api', hintModel: opts.hintModel });
+  await app.register(profileRoutes, { prefix: '/api' });
 
   return app;
 }

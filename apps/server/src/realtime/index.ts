@@ -5,6 +5,7 @@ import {
   type Ack,
   type AckError,
   type ClientToServerEvents,
+  type MatchMode,
   type ServerToClientEvents,
 } from '@thegrave/shared';
 import type { FastifyInstance } from 'fastify';
@@ -91,18 +92,30 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     joinRoom: (userId, room) => io.in(userRoom(userId)).socketsJoin(room),
     isConnected: async (userId) => (await io.in(userRoom(userId)).fetchSockets()).length > 0,
   };
-  const mm: Matchmaker = new Matchmaker(
-    redis,
-    notifier,
-    {
-      localUserIds: () => [...io.of('/').sockets.values()].map((s) => s.data.user.id),
-      onConfirmed: async (m) => {
-        if (opts.onConfirmed) await opts.onConfirmed(m, mm);
-        else await battle.createMatch(m);
+  // One queue per mode (decision.md D-067); both share the per-user state, so a player is in at most one.
+  const makeMatchmaker = (mode: MatchMode): Matchmaker => {
+    const instance: Matchmaker = new Matchmaker(
+      redis,
+      notifier,
+      {
+        localUserIds: () => [...io.of('/').sockets.values()].map((s) => s.data.user.id),
+        onConfirmed: async (m) => {
+          if (opts.onConfirmed) await opts.onConfirmed(m, instance);
+          else await battle.createMatch(m);
+        },
       },
-    },
-    opts.matchmaker,
-  );
+      { ...opts.matchmaker, mode },
+    );
+    return instance;
+  };
+  const queues = { DSA: makeMatchmaker('DSA'), PROGRAMMING: makeMatchmaker('PROGRAMMING') };
+  const mm = queues.DSA;
+  const allQueues = Object.values(queues);
+  /** Runs `fn` against each queue until one reports success (accept/decline/leave don't say which). */
+  const anyQueue = async (fn: (q: Matchmaker) => Promise<boolean>) => {
+    for (const q of allQueues) if (await fn(q)) return true;
+    return false;
+  };
   const leaderboard = new Leaderboard(redis);
   const battle = new BattleService(notifier, mm, leaderboard, {
     ...battleOptionsFromConfig(),
@@ -135,42 +148,58 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
   io.on('connection', (socket) => {
     const userId = socket.data.user.id;
     void socket.join(userRoom(userId));
-    void resync(socket, mm, battle, rooms).catch((err) => app.log.error({ err }, 'resync failed'));
+    void resync(socket, queues, battle, rooms).catch((err) =>
+      app.log.error({ err }, 'resync failed'),
+    );
 
     socket.on('time:sync', (ack) => {
       if (typeof ack === 'function') ack({ serverNow: Date.now() });
     });
 
-    socket.on('queue:join', (ack) =>
-      handle(socket, ack, async () => {
-        const res = await mm.join(userId);
+    socket.on('queue:join', (...args: unknown[]) => {
+      // `queue:join(ack)` is DSA; `queue:join({ mode }, ack)` picks the queue.
+      const [payload, ack] = typeof args[0] === 'function' ? [undefined, args[0]] : args;
+      const q =
+        (payload as { mode?: MatchMode } | undefined)?.mode === 'PROGRAMMING'
+          ? queues.PROGRAMMING
+          : mm;
+      return handle(socket, ack, async () => {
+        const res = await q.join(userId);
         if (res.ok) return { ok: true, joinedAt: res.joinedAt };
         return res.code === 'IN_ROOM'
           ? fail('IN_ROOM', 'Leave your private room before queueing')
-          : fail(res.code, 'You are already in a match');
-      }),
-    );
+          : res.code === 'IN_QUEUE'
+            ? fail('IN_QUEUE', 'You are already queued for the other mode')
+            : fail(res.code, 'You are already in a match');
+      });
+    });
     socket.on('queue:leave', (ack) =>
       handle(socket, ack, async () =>
-        (await mm.leave(userId)) ? { ok: true } : fail('NOT_QUEUED', 'You are not in the queue'),
+        (await anyQueue((q) => q.leave(userId)))
+          ? { ok: true }
+          : fail('NOT_QUEUED', 'You are not in the queue'),
       ),
     );
     socket.on('match:accept', (payload, ack) =>
       handle(socket, ack, async () =>
-        (await mm.accept(String(payload?.matchId), userId))
+        (await anyQueue((q) => q.accept(String(payload?.matchId), userId)))
           ? { ok: true }
           : fail('MATCH_NOT_FOUND', 'That match is no longer available'),
       ),
     );
     socket.on('match:decline', (payload, ack) =>
       handle(socket, ack, async () =>
-        (await mm.decline(String(payload?.matchId), userId))
+        (await anyQueue((q) => q.decline(String(payload?.matchId), userId)))
           ? { ok: true }
           : fail('MATCH_NOT_FOUND', 'That match is no longer available'),
       ),
     );
 
-    socket.on('room:create', (ack) => handle(socket, ack, () => rooms.create(userId)));
+    socket.on('room:create', (...args: unknown[]) => {
+      const [payload, ack] = typeof args[0] === 'function' ? [undefined, args[0]] : args;
+      const mode = (payload as { mode?: MatchMode } | undefined)?.mode ?? 'DSA';
+      return handle(socket, ack, () => rooms.create(userId, mode));
+    });
     socket.on('room:join', (payload, ack) =>
       handle(socket, ack, () => rooms.join(userId, String(payload?.code ?? ''))),
     );
@@ -193,7 +222,7 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
       try {
         const remaining = await io.in(userRoom(userId)).fetchSockets();
         if (remaining.length === 0) {
-          await mm.leave(userId, 'disconnected');
+          for (const q of allQueues) await q.leave(userId, 'disconnected');
           await battle.markAway(userId);
           rooms.scheduleLeave(userId);
         }
@@ -203,11 +232,11 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     });
   });
 
-  mm.start();
+  for (const q of allQueues) q.start();
 
   app.addHook('preClose', async () => {
     shuttingDown = true;
-    await mm.stop();
+    await Promise.all(allQueues.map((q) => q.stop()));
     rooms.stop();
     await battleWorker.close();
     await maintenance.then((m) => m.close()).catch(() => {});
@@ -217,7 +246,7 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     await Promise.allSettled([pub.quit(), sub.quit()]);
   });
 
-  return { io, matchmaker: mm, battle, rooms, leaderboard, maintenance };
+  return { io, matchmaker: mm, queues, battle, rooms, leaderboard, maintenance };
 }
 
 const fail = (code: AckError, message: string): Ack => ({ ok: false, code, message });
@@ -239,7 +268,7 @@ async function handle<T extends Ack>(socket: GraveSocket, ack: unknown, fn: () =
 /** A (re)connecting socket learns the user's current matchmaking/battle state, e.g. after a page reload. */
 async function resync(
   socket: GraveSocket,
-  mm: Matchmaker,
+  queues: Record<MatchMode, Matchmaker>,
   battle: BattleService,
   rooms: RoomService,
 ) {
@@ -259,13 +288,16 @@ async function resync(
     socket.emit('room:updated', room);
     return;
   }
-  const s = await mm.describe(socket.data.user.id);
-  if (s.state === 'queued') socket.emit('queue:joined', { joinedAt: s.joinedAt });
-  if (s.state === 'ready') {
-    socket.emit('match:found', {
-      matchId: s.matchId,
-      opponent: s.opponent,
-      expiresAt: s.expiresAt,
-    });
+  for (const [mode, q] of Object.entries(queues) as [MatchMode, Matchmaker][]) {
+    const s = await q.describe(socket.data.user.id);
+    if (s.state === 'queued') socket.emit('queue:joined', { joinedAt: s.joinedAt, mode });
+    if (s.state === 'ready') {
+      socket.emit('match:found', {
+        matchId: s.matchId,
+        opponent: s.opponent,
+        expiresAt: s.expiresAt,
+        mode,
+      });
+    }
   }
 }

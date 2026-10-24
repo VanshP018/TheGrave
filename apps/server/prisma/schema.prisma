@@ -12,6 +12,9 @@ model User {
   username     String   @unique
   email        String   @unique
   passwordHash String
+  // School / college, asked at registration (decision.md D-076). Null for accounts that predate it.
+  institution     String?
+  emailVerifiedAt DateTime?
   // Glicko-2 rating state (see decision.md D-010)
   rating       Float    @default(1500)
   ratingDev    Float    @default(350)
@@ -26,6 +29,14 @@ model User {
   submissions   Submission[]
   matches       MatchPlayer[]
   seenProblems  SeenProblem[]
+  projectRuns   ProjectRun[]
+  // Public profile (decision.md D-071)
+  bio             String?
+  // { github?, linkedin?, x?, website? }: https URLs, validated on write
+  links           Json?
+  // Set when an avatar is uploaded; doubles as the cache-buster in its URL
+  avatarUpdatedAt DateTime?
+  avatar          Avatar?
   ratingHistory RatingHistory[]
 
   @@index([ratedGames, rating])
@@ -154,12 +165,23 @@ enum MatchEndReason {
   TIMEOUT // decided on tests passed (or draw) at endsAt
   FORFEIT // a player stayed disconnected past the grace period
   ABANDONED // both players disconnected
+  AGREED // both players agreed to a draw (decision.md D-068)
+  RESIGNED // a player quit
+}
+
+enum MatchMode {
+  DSA // one problem, stdin/stdout judge
+  PROGRAMMING // a codebase to debug, graded by its hidden tests (decision.md D-067)
 }
 
 model Match {
   id         String          @id @default(uuid(7)) @db.Uuid
-  problemId  String          @db.Uuid
-  problem    Problem         @relation(fields: [problemId], references: [id])
+  mode       MatchMode       @default(DSA)
+  // Exactly one of these is set, by mode
+  problemId  String?         @db.Uuid
+  problem    Problem?        @relation(fields: [problemId], references: [id])
+  projectId  String?         @db.Uuid
+  project    Project?        @relation(fields: [projectId], references: [id])
   status     MatchStatus     @default(PENDING)
   // Server-authoritative timer (decision.md D-009)
   startsAt   DateTime
@@ -176,6 +198,7 @@ model Match {
 
   players       MatchPlayer[]
   submissions   Submission[]
+  projectRuns   ProjectRun[]
   ratingChanges RatingHistory[]
 
   @@index([status])
@@ -233,4 +256,78 @@ model RatingHistory {
   // Backstop for idempotency: one rating change per player per match
   @@unique([matchId, userId])
   @@index([userId, createdAt])
+}
+
+// ---- Programming challenges: debug a small codebase (decision.md D-066) ----------------------------
+
+enum ProjectLanguage {
+  python
+  node
+}
+
+model Project {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  slug        String          @unique
+  title       String
+  difficulty  Difficulty
+  language    ProjectLanguage
+  summary     String
+  statement   String // markdown
+  tags        String[]        @default([])
+  // Starter codebase { path: content }, sent to the player
+  files       Json
+  // Grading tests { path: content } under __grave__/, never sent to the client
+  hiddenTests Json
+  // Size of the hidden suite: a SUBMIT is solved only if this many tests passed
+  hiddenTestCount Int
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  runs    ProjectRun[]
+  matches Match[]
+}
+
+enum ProjectRunKind {
+  COMMAND // a terminal command
+  TEST // the visible tests in tests/
+  SUBMIT // the hidden tests: this is what counts as solved
+}
+
+model ProjectRun {
+  id         String           @id @default(uuid(7)) @db.Uuid
+  userId     String           @db.Uuid
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId  String           @db.Uuid
+  project    Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Set for SUBMITs made inside a programming battle
+  matchId    String?          @db.Uuid
+  match      Match?           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  kind       ProjectRunKind
+  command    String?
+  // The player's files at the time of the run
+  files      Json
+  status     SubmissionStatus @default(QUEUED)
+  exitCode   Int?
+  output     String?
+  timedOut   Boolean          @default(false)
+  passed     Int?
+  total      Int?
+  // [{ name, status, message }] for TEST and SUBMIT
+  results    Json?
+  timeMs     Int?
+  createdAt  DateTime         @default(now())
+  finishedAt DateTime?
+
+  @@index([userId, projectId, createdAt])
+  @@index([matchId, userId])
+}
+
+// Profile pictures live apart from User so loading a user never drags the image along (decision.md D-071).
+model Avatar {
+  userId    String   @id @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // PNG, JPEG or WebP; content-checked by magic bytes, at most 256 KB
+  data      Bytes
+  mime      String
+  updatedAt DateTime @updatedAt
 }

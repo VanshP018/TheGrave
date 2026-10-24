@@ -16,14 +16,16 @@ await admin.end();
 
 execSync('pnpm exec prisma migrate deploy', { stdio: 'ignore', env: process.env });
 execSync('docker build -q -t thegrave-judge:latest judge', { stdio: 'ignore' });
+execSync('docker build -q -t thegrave-workspace:latest workspace', { stdio: 'ignore' });
 
 // Imported after migrations so the client sees the current schema.
 const { prisma } = await import('../../src/lib/prisma.js');
 const { buildTestCases, STARTER_CODE } = await import('../../src/seed/build.js');
 const { problems } = await import('../../src/seed/problems.js');
 const { TAGS } = await import('../../src/seed/tags.js');
+const { projectData, projects } = await import('../../src/seed/projects.js');
 
-await prisma.$executeRawUnsafe('TRUNCATE "User", "Problem" CASCADE');
+await prisma.$executeRawUnsafe('TRUNCATE "User", "Problem", "Project" CASCADE');
 // Exactly one problem, so every battle gets it and the tests know a correct solution.
 const def = problems.find((p) => p.slug === 'sum-of-array')!;
 await prisma.problem.create({
@@ -37,6 +39,9 @@ await prisma.problem.create({
     testCases: { create: buildTestCases(def) },
   },
 });
+// All programming challenges (decision.md D-066).
+for (const p of projects)
+  await prisma.project.create({ data: { slug: p.slug, ...projectData(p) } });
 
 // A veteran with 30 rated games (played through the real Glicko-2 code) and four ranked rivals,
 // so the leaderboard and profile have realistic data. The server rebuilds the leaderboard on boot.
@@ -51,6 +56,8 @@ const rivals = await Promise.all(
         username: `rival${i}`,
         email: `rival${i}@e2e.test`,
         passwordHash,
+        institution: 'Grave Academy',
+        emailVerifiedAt: new Date(),
         rating,
         ratingDev: 70,
         ratedGames: 20,
@@ -63,6 +70,8 @@ const vet = await prisma.user.create({
     username: 'veteran',
     email: 'veteran@e2e.test',
     passwordHash,
+    institution: 'Grave Academy',
+    emailVerifiedAt: new Date(),
     createdAt: new Date(Date.now() - 40 * DAY),
   },
 });

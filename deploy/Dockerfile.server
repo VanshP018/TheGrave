@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1
+# TheGrave server images (decision.md D-080). One build, three runtime targets:
+#   api      the Fastify + Socket.IO server (non-root, no Docker access)
+#   worker   the judge + workspace workers; needs the Docker CLI and the host's Docker socket
+#   migrate  runs `prisma migrate deploy` once per release (has the full toolchain)
+FROM node:24-alpine AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+RUN corepack enable && corepack prepare pnpm@10.34.6 --activate
+WORKDIR /repo
+
+FROM base AS build
+# Manifests first, so the dependency layer is cached until a dependency changes.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/server/package.json apps/server/
+COPY apps/web/package.json apps/web/
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter @thegrave/server...
+COPY tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/server apps/server
+RUN pnpm --filter @thegrave/shared build \
+ && pnpm --filter @thegrave/server exec prisma generate \
+ && pnpm --filter @thegrave/server build
+# Production-only dependencies, with the workspace package copied in.
+RUN pnpm --filter @thegrave/server deploy --prod --legacy /out
+
+FROM base AS migrate
+COPY --from=build /repo /repo
+WORKDIR /repo/apps/server
+USER node
+CMD ["pnpm", "exec", "prisma", "migrate", "deploy"]
+
+FROM node:24-alpine AS api
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build --chown=node:node /out /app
+USER node
+EXPOSE 4000
+HEALTHCHECK --interval=15s --timeout=4s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:4000/health >/dev/null || exit 1
+CMD ["node", "dist/index.js"]
+
+FROM api AS worker
+# The workers start sandbox containers on the host's Docker daemon through its socket.
+USER root
+RUN apk add --no-cache docker-cli
+HEALTHCHECK NONE
+CMD ["node", "dist/worker.js"]

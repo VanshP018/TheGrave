@@ -1,0 +1,48 @@
+# Edge server (decision.md D-080). SITE_ADDRESS is the public domain (e.g. thegrave.example): Caddy then gets
+# and renews a Let's Encrypt certificate by itself. For a local trial use SITE_ADDRESS=:80 (plain http).
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		# Scripts only from our own origin. 'unsafe-inline' is for styles only: React inline style attributes
+		# and the code editor's injected <style> need it; there is no inline script. Monaco's workers are
+		# bundled (worker-src 'self' blob:). Avatars are same-origin images (data: for the live preview).
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	# The API, the realtime socket and the health probe go to the server container.
+	@backend path /api/* /socket.io/* /health
+	handle @backend {
+		reverse_proxy api:4000 {
+			# WebSockets are upgraded automatically. Fail fast on a dead upstream instead of hanging.
+			transport http {
+				dial_timeout 3s
+			}
+			health_uri /health
+			health_interval 10s
+		}
+	}
+
+	# Everything else is the single-page app: real files, otherwise index.html (client-side routes).
+	handle {
+		root * /srv
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@shell not path /assets/*
+		header @shell Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

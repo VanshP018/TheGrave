@@ -26,6 +26,15 @@ services:
       timeout: 3s
       retries: 10
 
+  # Local SMTP server + web inbox for dev email (decision.md D-077): the app sends real SMTP to :1025,
+  # every message shows up at http://localhost:8025. Nothing leaves this machine.
+  mailpit:
+    image: axllent/mailpit:v1.21.0
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports: ["1025:1025", "8025:8025"]
+
 volumes:
   pgdata:
   redisdata:

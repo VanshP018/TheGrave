@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+.git
+.github
+e2e
+test-results
+playwright-report
+**/*.log
+.env
+.env.*
+!.env.production.example
+docs
+PLAN.md
+decision.md

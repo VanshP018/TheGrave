@@ -5,17 +5,22 @@ import { config } from '../../src/config.js';
 import { DockerExecutor } from '../../src/judge/docker-executor.js';
 import { createJudgeWorker } from '../../src/judge/worker.js';
 import { attachRealtime } from '../../src/realtime/index.js';
+import { WorkspaceExecutor } from '../../src/workspace/executor.js';
+import { createWorkspaceWorker } from '../../src/workspace/worker.js';
 
 const app = await buildApp();
 attachRealtime(app);
 const judge = createJudgeWorker(new DockerExecutor({ image: config.JUDGE_IMAGE }), {
   concurrency: 4,
 });
+const workspace = createWorkspaceWorker(new WorkspaceExecutor({ image: config.WORKSPACE_IMAGE }), {
+  concurrency: 2,
+});
 await app.listen({ port: config.PORT, host: '127.0.0.1' });
 console.log(`e2e backend listening on ${config.PORT}`);
 
 const stop = async () => {
-  await judge.close();
+  await Promise.all([judge.close(), workspace.close()]);
   await app.close();
   process.exit(0);
 };

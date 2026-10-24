@@ -209,7 +209,7 @@ describe('leases (orphan protection)', () => {
     expect((await mm.tick()).purged).toEqual([a]);
     expect(await mm.describe(a!)).toEqual({ state: 'idle' });
     expect(await redis.exists('mm:queue', 'mm:joined', 'mm:lease', `user:${a}:state`)).toBe(0);
-    expect(of(a!, 'queue:left')[0]!.payload).toEqual({ reason: 'expired' });
+    expect(of(a!, 'queue:left')[0]!.payload).toEqual({ reason: 'expired', mode: 'DSA' });
   });
 
   it('keeps entries whose lease a node keeps renewing', async () => {
