@@ -68,3 +68,15 @@ export const ChevronIcon = (p: P) => (
     <path d="m6 9 6 6 6-6" />
   </Icon>
 );
+export const HandshakeIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="m11 17 2 2a1.4 1.4 0 0 0 2-2" />
+    <path d="m14 14 2.5 2.5a1.4 1.4 0 0 0 2-2l-3.9-3.9a2.8 2.8 0 0 0-4 0l-.9.9a1.4 1.4 0 0 1-2-2l2.8-2.8a3.9 3.9 0 0 1 5-.3l.5.4a2 2 0 0 0 1.3.4H21" />
+    <path d="M21 4v9h-2M3 4h8M3 4v9h2l4 4a1.4 1.4 0 0 0 2-2" />
+  </Icon>
+);
+export const FlagIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M4 22V4M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1" />
+  </Icon>
+);

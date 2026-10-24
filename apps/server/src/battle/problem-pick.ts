@@ -41,3 +41,24 @@ export async function pickProblem(
   if (!all.length) throw new Error('no problems in the database; run db:seed');
   return random(all);
 }
+
+/**
+ * A codebase for a programming battle (decision.md D-067): the target difficulty, else the nearest one.
+ * Unlike DSA problems there are only a handful, so having opened one in practice doesn't exclude it.
+ */
+export async function pickProject(
+  target: Difficulty,
+): Promise<{ id: string; difficulty: Difficulty }> {
+  const t = ORDER.indexOf(target);
+  const byDistance = [...ORDER].sort(
+    (x, y) => Math.abs(ORDER.indexOf(x) - t) - Math.abs(ORDER.indexOf(y) - t),
+  );
+  for (const difficulty of byDistance) {
+    const found = await prisma.project.findMany({
+      where: { difficulty },
+      select: { id: true, difficulty: true },
+    });
+    if (found.length) return random(found);
+  }
+  throw new Error('no programming projects in the database; run db:seed');
+}

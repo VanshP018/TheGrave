@@ -7,6 +7,8 @@ const REASON: Record<MatchResult['endReason'], string> = {
   TIMEOUT: 'decided on tests passed when time ran out',
   FORFEIT: 'opponent disconnected',
   ABANDONED: 'both players disconnected',
+  AGREED: 'you agreed to a draw',
+  RESIGNED: 'your opponent quit',
 };
 
 export function ResultOverlay({
@@ -33,7 +35,9 @@ export function ResultOverlay({
   const reason =
     result.endReason === 'FORFEIT' && result.winnerId !== me
       ? 'you were disconnected too long'
-      : REASON[result.endReason];
+      : result.endReason === 'RESIGNED' && result.winnerId !== me
+        ? 'you quit'
+        : REASON[result.endReason];
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm"

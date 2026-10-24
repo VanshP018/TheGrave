@@ -29,7 +29,10 @@ export function SectionTitle({ children }: { children: ReactNode }) {
   );
 }
 
-/** The tiny Markdown subset our statements use: `###` headings, `- ` lists, paragraphs, inline code, bold. */
+/**
+ * The tiny Markdown subset our statements use: `#`–`###` headings, `- ` lists, fenced code blocks,
+ * paragraphs, inline code, bold.
+ */
 export function Statement({ markdown }: { markdown: string }) {
   const blocks: ReactNode[] = [];
   let list: string[] = [];
@@ -44,14 +47,37 @@ export function Statement({ markdown }: { markdown: string }) {
     );
     list = [];
   };
+  let fence: string[] | null = null;
   for (const line of markdown.split('\n')) {
+    if (line.startsWith('```')) {
+      if (fence) {
+        blocks.push(
+          <pre
+            key={blocks.length}
+            className="overflow-x-auto rounded-md border border-ash-700 bg-hero-bg/60 px-4 py-3 font-mono text-[13px] leading-6 text-ink"
+          >
+            {fence.join('\n')}
+          </pre>,
+        );
+        fence = null;
+      } else {
+        flush();
+        fence = [];
+      }
+      continue;
+    }
+    if (fence) {
+      fence.push(line);
+      continue;
+    }
     if (line.startsWith('- ')) {
       list.push(line.slice(2));
       continue;
     }
     flush();
-    if (line.startsWith('### ')) {
-      blocks.push(<SectionTitle key={blocks.length}>{line.slice(4)}</SectionTitle>);
+    const heading = line.match(/^#{1,3} (.*)$/);
+    if (heading) {
+      blocks.push(<SectionTitle key={blocks.length}>{heading[1]}</SectionTitle>);
     } else if (line.trim()) {
       blocks.push(<p key={blocks.length}>{inline(line)}</p>);
     }

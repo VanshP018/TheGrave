@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { Redis } from 'ioredis';
 import { E2E_REDIS_URL } from '../playwright.config';
+import { registerViaUi } from './helpers';
 
 // Exit criterion for Phase 4: win, time-out, draw and disconnect-forfeit, each with two browser contexts.
 // The only seeded problem is "Sum of Array" (9 tests: 2 samples + 7 hidden), judged by the real Docker sandbox.
@@ -21,11 +22,7 @@ test.beforeEach(async () => {
 async function player(browser: Browser, name: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
   const username = `${name}${Date.now() % 100000}${seq++}`;
-  await page.goto('/register');
-  await page.getByLabel('Username').fill(username);
-  await page.getByLabel('Email').fill(`${username}@e2e.test`);
-  await page.getByLabel('Password').fill('correct-horse-battery');
-  await page.getByRole('button', { name: 'Register' }).click();
+  await registerViaUi(page, username);
   await expect(page.getByRole('heading', { name: `Welcome, ${username}` })).toBeVisible();
   await expect(page.getByText('Connected')).toBeVisible();
   return page;
@@ -102,4 +99,27 @@ test('disconnect-forfeit: a player gone past the grace period loses', async ({ b
   await expect(a.getByTestId('opponent-progress')).toContainText('away');
   await expect(result(a)).toHaveText('You won!', { timeout: 15_000 });
   await expect(reason(a)).toContainText('opponent disconnected');
+});
+
+test('offer draw: the opponent accepts from the prompt, both see a draw', async ({ browser }) => {
+  const [a, b] = await battle(browser);
+  await a.getByRole('button', { name: 'Offer a draw' }).click();
+  await expect(a.getByRole('button', { name: 'Withdraw draw offer' })).toBeVisible();
+  const prompt = b.getByRole('alertdialog', { name: 'Draw offered' });
+  await expect(prompt).toBeVisible();
+  await prompt.getByRole('button', { name: 'Accept draw' }).click();
+  for (const p of [a, b]) {
+    await expect(result(p)).toHaveText('Draw');
+    await expect(reason(p)).toContainText('agreed to a draw');
+  }
+});
+
+test('quit: confirming hands the win to the opponent', async ({ browser }) => {
+  const [a, b] = await battle(browser);
+  a.once('dialog', (d) => void d.accept());
+  await a.getByRole('button', { name: 'Quit the battle' }).click();
+  await expect(result(a)).toHaveText('You lost');
+  await expect(reason(a)).toContainText('you quit');
+  await expect(result(b)).toHaveText('You won!');
+  await expect(reason(b)).toContainText('your opponent quit');
 });

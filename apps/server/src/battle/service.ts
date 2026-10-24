@@ -3,19 +3,25 @@ import {
   type BattleView,
   type CodeSubmissionInput,
   type Difficulty,
+  type MatchMode,
+  type MySubmission,
+  type ProjectLanguage,
   type MatchResult,
   type PlayerProgress,
   type ServerToClientEvents,
 } from '@thegrave/shared';
 import { enqueueSubmission } from '../judge/queue.js';
+import { avatarUrl } from '../lib/avatar.js';
 import { prisma } from '../lib/prisma.js';
 import { redis } from '../lib/redis.js';
 import type { ConfirmedMatch, Matchmaker, Notifier } from '../matchmaking/matchmaker.js';
 import { applyMatchRating, toRatingChange } from '../rating/apply.js';
 import type { Leaderboard } from '../rating/leaderboard.js';
 import { markSeen, toProblemDetail } from '../modules/problems/detail.js';
-import { decideOutcome, type Outcome } from './outcome.js';
-import { difficultyFor, pickProblem } from './problem-pick.js';
+import { isFullPass, toProjectDetail } from '../modules/projects/detail.js';
+import { enqueueWorkspaceRun } from '../workspace/queue.js';
+import { decideOutcome, type Outcome, type SubmissionFact } from './outcome.js';
+import { difficultyFor, pickProblem, pickProject } from './problem-pick.js';
 import { scheduleBattleJob, type BattleJob } from './queue.js';
 
 type Events = ServerToClientEvents;
@@ -59,6 +65,13 @@ export class BattleError extends Error {
 
 const awayKey = (matchId: string, userId: string) => `battle:away:${matchId}:${userId}`;
 const cooldownKey = (matchId: string, userId: string) => `battle:cooldown:${matchId}:${userId}`;
+// Draw offers (decision.md D-068): one open offer per match, and a re-offer cooldown after a decline.
+const drawKey = (matchId: string) => `battle:draw:${matchId}`;
+const drawCooldownKey = (matchId: string, userId: string) =>
+  `battle:draw-cooldown:${matchId}:${userId}`;
+export const DRAW_OFFER_TTL_MS = 30_000;
+export const DRAW_REOFFER_COOLDOWN_MS = 30_000;
+export type DrawAction = 'offer' | 'accept' | 'decline' | 'withdraw';
 const LIVE = ['PENDING', 'ACTIVE'] as const;
 
 /**
@@ -86,32 +99,40 @@ export class BattleService {
    */
   async createMatch(
     confirmed: ConfirmedMatch,
-    opts: { difficulty?: Difficulty; rated?: boolean } = {},
+    opts: { difficulty?: Difficulty; rated?: boolean; mode?: MatchMode } = {},
   ): Promise<string> {
+    const mode = opts.mode ?? confirmed.mode ?? 'DSA';
     const ids = confirmed.players.map((p) => p.id);
     const users = await prisma.user.findMany({
       where: { id: { in: ids } },
       select: { id: true, rating: true },
     });
     const avg = users.reduce((s, u) => s + u.rating, 0) / users.length;
-    const problem = await pickProblem(ids, opts.difficulty ?? difficultyFor(avg));
+    const target = opts.difficulty ?? difficultyFor(avg);
+    // Programming battles get a codebase instead of a problem (decision.md D-067).
+    const problem = mode === 'DSA' ? await pickProblem(ids, target) : null;
+    const project = mode === 'PROGRAMMING' ? await pickProject(target) : null;
+    const difficulty = (problem ?? project)!.difficulty;
 
     const startsAt = Date.now() + this.opts.countdownMs;
-    const endsAt = startsAt + this.opts.durationMs[problem.difficulty];
+    const endsAt = startsAt + this.opts.durationMs[difficulty];
     const match = await prisma.$transaction(async (tx) => {
       const m = await tx.match.create({
         data: {
-          problemId: problem.id,
+          mode,
+          problemId: problem?.id ?? null,
+          projectId: project?.id ?? null,
           startsAt: new Date(startsAt),
           endsAt: new Date(endsAt),
           rated: opts.rated ?? true,
           players: { create: users.map((u) => ({ userId: u.id, ratingBefore: u.rating })) },
         },
       });
-      await tx.seenProblem.createMany({
-        data: ids.map((userId) => ({ userId, problemId: problem.id })),
-        skipDuplicates: true,
-      });
+      if (problem)
+        await tx.seenProblem.createMany({
+          data: ids.map((userId) => ({ userId, problemId: problem.id })),
+          skipDuplicates: true,
+        });
       return m;
     });
 
@@ -158,10 +179,15 @@ export class BattleService {
   }
 
   private async judged(matchId: string, submissionId: string) {
-    const sub = await prisma.submission.findUnique({
-      where: { id: submissionId },
-      select: { userId: true },
-    });
+    const sub =
+      (await prisma.submission.findUnique({
+        where: { id: submissionId },
+        select: { userId: true },
+      })) ??
+      (await prisma.projectRun.findUnique({
+        where: { id: submissionId },
+        select: { userId: true },
+      }));
     if (!sub) return;
     this.notify.toUser(sub.userId, 'submission:judged', { matchId, submissionId });
     await this.emitProgress(matchId, sub.userId);
@@ -199,27 +225,13 @@ export class BattleService {
   async evaluate(matchId: string, ignorePending = false): Promise<Outcome['kind'] | 'closed'> {
     const m = await prisma.match.findUnique({
       where: { id: matchId },
-      include: {
-        players: { select: { userId: true } },
-        submissions: {
-          select: {
-            id: true,
-            userId: true,
-            createdAt: true,
-            status: true,
-            verdict: true,
-            testsPassed: true,
-          },
-        },
-      },
+      include: { players: { select: { userId: true } } },
     });
     if (!m || !LIVE.includes(m.status as (typeof LIVE)[number])) return 'closed';
     const players = m.players.map((p) => p.userId) as [string, string];
     const outcome = decideOutcome(
       players,
-      m.submissions
-        .filter((s) => s.createdAt < m.endsAt)
-        .map((s) => ({ ...s, createdAt: s.createdAt.getTime() })),
+      (await this.facts(m)).filter((s) => s.createdAt < m.endsAt.getTime()),
       { timeUp: Date.now() >= m.endsAt.getTime(), ignorePending },
     );
     if (outcome.kind === 'win') {
@@ -266,7 +278,7 @@ export class BattleService {
     if (!outcome) return false;
 
     await this.mm.release(matchId, outcome.ids);
-    await redis.del(...outcome.ids.map((u) => awayKey(matchId, u)));
+    await redis.del(...outcome.ids.map((u) => awayKey(matchId, u)), drawKey(matchId));
     // Derived state, updated after commit; a failure here is repaired by the next rebuild (D-050).
     await this.leaderboard.applyChanges(outcome.changes).catch(() => {});
     this.notify.toRoom(matchRoom(matchId), 'battle:finished', {
@@ -313,12 +325,87 @@ export class BattleService {
     await this.emitProgress(m.id, userId);
   }
 
+  // ---- quitting and draws (decision.md D-068) ------------------------------------------------
+
+  /** A live match the user plays in, or a BattleError. `started` also requires the problem to be out. */
+  private async liveMatchOf(matchId: string, userId: string, started = false) {
+    const m = await prisma.match.findUnique({ where: { id: matchId }, include: { players: true } });
+    if (!m || !m.players.some((p) => p.userId === userId))
+      throw new BattleError(404, 'Match not found');
+    const now = Date.now();
+    if (
+      !LIVE.includes(m.status as (typeof LIVE)[number]) ||
+      now >= m.endsAt.getTime() ||
+      (started && now < m.startsAt.getTime())
+    )
+      throw new BattleError(409, 'The match is not running');
+    return { m, opponent: m.players.find((p) => p.userId !== userId)!.userId };
+  }
+
+  /** Quit: the opponent wins. Allowed any time the match is live, countdown included. */
+  async resign(matchId: string, userId: string): Promise<void> {
+    const { opponent } = await this.liveMatchOf(matchId, userId);
+    await redis.del(drawKey(matchId));
+    if (
+      !(await this.finish(matchId, {
+        status: 'FINISHED',
+        winnerId: opponent,
+        endReason: 'RESIGNED',
+      }))
+    )
+      throw new BattleError(409, 'The match is already over');
+  }
+
+  /**
+   * Draw offers. `offer` opens one (it expires after DRAW_OFFER_TTL_MS); the opponent may `accept` (the
+   * match ends as a draw, rated like any other) or `decline` (the offerer must wait before offering again);
+   * the offerer may `withdraw`. Accepting takes the offer with GETDEL, so it can only be accepted once.
+   */
+  async draw(matchId: string, userId: string, action: DrawAction): Promise<void> {
+    const { opponent } = await this.liveMatchOf(matchId, userId, true);
+    const key = drawKey(matchId);
+    const room = matchRoom(matchId);
+    if (action === 'offer') {
+      const wait = await redis.pttl(drawCooldownKey(matchId, userId));
+      if (wait > 0)
+        throw new BattleError(
+          429,
+          'Your last offer was declined; wait before offering again',
+          wait,
+        );
+      if (!(await redis.set(key, userId, 'PX', DRAW_OFFER_TTL_MS, 'NX')))
+        throw new BattleError(409, 'A draw offer is already open');
+      this.notify.toRoom(room, 'battle:draw', { matchId, offeredBy: userId });
+      return;
+    }
+    if (action === 'withdraw') {
+      if ((await redis.get(key)) !== userId) throw new BattleError(409, 'You have no open offer');
+      await redis.del(key);
+      this.notify.toRoom(room, 'battle:draw', { matchId, offeredBy: null });
+      return;
+    }
+    // accept / decline: only the opponent of whoever offered.
+    if ((await redis.get(key)) !== opponent)
+      throw new BattleError(409, 'There is no offer to answer');
+    if (action === 'decline') {
+      await redis.del(key);
+      await redis.set(drawCooldownKey(matchId, opponent), '1', 'PX', DRAW_REOFFER_COOLDOWN_MS);
+      this.notify.toRoom(room, 'battle:draw', { matchId, offeredBy: null, declinedBy: userId });
+      return;
+    }
+    if ((await redis.getdel(key)) !== opponent)
+      throw new BattleError(409, 'That offer just expired');
+    if (!(await this.finish(matchId, { status: 'FINISHED', winnerId: null, endReason: 'AGREED' })))
+      throw new BattleError(409, 'The match is already over');
+  }
+
   // ---- submissions & views -----------------------------------------------------------------
 
+  /** DSA matches take `{ language, code }`; programming matches take `{ files }` (decision.md D-067). */
   async submit(
     matchId: string,
     userId: string,
-    input: CodeSubmissionInput,
+    input: CodeSubmissionInput | { files: Record<string, string> },
   ): Promise<{ id: string }> {
     const m = await prisma.match.findUnique({ where: { id: matchId }, include: { players: true } });
     if (!m || !m.players.some((p) => p.userId === userId))
@@ -342,18 +429,28 @@ export class BattleService {
         );
       }
     }
+    if (m.mode === 'PROGRAMMING') {
+      if (!('files' in input)) throw new BattleError(409, 'This battle takes files, not code');
+      const run = await prisma.projectRun.create({
+        data: { userId, matchId, projectId: m.projectId!, kind: 'SUBMIT', files: input.files },
+      });
+      await enqueueWorkspaceRun(run.id);
+      await this.emitProgress(matchId, userId);
+      return { id: run.id };
+    }
+    if (!('code' in input)) throw new BattleError(409, 'This battle takes code, not files');
     const sub = await prisma.submission.create({
       data: {
         userId,
         matchId,
-        problemId: m.problemId,
+        problemId: m.problemId!,
         kind: 'SUBMIT',
         language: input.language,
         code: input.code,
       },
     });
     await enqueueSubmission(sub.id);
-    await markSeen([userId], m.problemId);
+    await markSeen([userId], m.problemId!);
     await this.emitProgress(matchId, userId);
     return { id: sub.id };
   }
@@ -364,6 +461,7 @@ export class BattleService {
       include: {
         players: { include: { user: { select: { username: true } } } },
         problem: { include: { testCases: { orderBy: { ordinal: 'asc' } } } },
+        project: true,
       },
     });
     if (!m || !m.players.some((p) => p.userId === userId))
@@ -372,7 +470,7 @@ export class BattleService {
     const started = m.status !== 'PENDING' || Date.now() >= m.startsAt.getTime();
     const [players, mine] = await Promise.all([
       Promise.all(m.players.map((p) => this.progress(m.id, p.userId))),
-      prisma.submission.findMany({ where: { matchId, userId }, orderBy: { createdAt: 'asc' } }),
+      this.facts(m, userId),
     ]);
     // The viewer first, so clients can render "me vs them" without searching.
     players.sort((a, b) => (a.userId === userId ? -1 : b.userId === userId ? 1 : 0));
@@ -380,11 +478,17 @@ export class BattleService {
       id: m.id,
       status: m.status,
       rated: m.rated,
+      mode: m.mode,
       startsAt: m.startsAt.getTime(),
       endsAt: m.endsAt.getTime(),
       serverNow: Date.now(),
-      problem: started ? toProblemDetail(m.problem) : null,
-      totalTests: started ? m.problem.testCases.length : null,
+      problem: started && m.problem ? toProblemDetail(m.problem) : null,
+      project: started && m.project ? toProjectDetail(m.project) : null,
+      totalTests: !started
+        ? null
+        : m.problem
+          ? m.problem.testCases.length
+          : (m.project?.hiddenTestCount ?? null),
       players,
       mySubmissions: mine.map((s) => ({
         id: s.id,
@@ -393,9 +497,11 @@ export class BattleService {
         verdict: s.verdict,
         testsPassed: s.testsPassed,
         testsTotal: s.testsTotal,
-        createdAt: s.createdAt.getTime(),
+        createdAt: s.createdAt,
       })),
       submitCooldownMs: this.opts.submitCooldownMs,
+      drawOfferedBy:
+        m.status === 'ACTIVE' || m.status === 'PENDING' ? await redis.get(drawKey(matchId)) : null,
       result:
         m.status === 'FINISHED' || m.status === 'ABORTED'
           ? {
@@ -420,17 +526,20 @@ export class BattleService {
     const [player, subs, away] = await Promise.all([
       prisma.matchPlayer.findUniqueOrThrow({
         where: { matchId_userId: { matchId, userId } },
-        include: { user: { select: { username: true } } },
+        include: { user: { select: { username: true, avatarUpdatedAt: true } } },
       }),
-      prisma.submission.findMany({
-        where: { matchId, userId },
-        select: { status: true, verdict: true, testsPassed: true },
-      }),
+      prisma.match
+        .findUniqueOrThrow({
+          where: { id: matchId },
+          select: { id: true, mode: true, projectId: true },
+        })
+        .then((m) => this.facts(m, userId)),
       redis.get(awayKey(matchId, userId)),
     ]);
     return {
       userId,
       username: player.user.username,
+      avatarUrl: avatarUrl(player.user),
       rating: Math.round(player.ratingBefore),
       attempts: subs.length,
       pending: subs.filter((s) => s.status === 'QUEUED' || s.status === 'RUNNING').length,
@@ -439,6 +548,57 @@ export class BattleService {
       connected: away === null,
       graceEndsAt: away === null ? null : Number(away) + this.opts.graceMs,
     };
+  }
+
+  /**
+   * A match's submissions as judge-agnostic facts, oldest first: DSA submissions, or the SUBMIT runs of a
+   * programming battle. A run is ACCEPTED only if the whole hidden suite ran and passed (decision.md D-067).
+   */
+  private async facts(
+    m: { id: string; mode: MatchMode; projectId: string | null },
+    userId?: string,
+  ): Promise<(SubmissionFact & Pick<MySubmission, 'language' | 'testsTotal'>)[]> {
+    if (m.mode === 'DSA') {
+      const subs = await prisma.submission.findMany({
+        where: { matchId: m.id, ...(userId ? { userId } : {}) },
+        orderBy: { createdAt: 'asc' },
+      });
+      return subs.map((s) => ({
+        id: s.id,
+        userId: s.userId,
+        createdAt: s.createdAt.getTime(),
+        status: s.status,
+        verdict: s.verdict,
+        testsPassed: s.testsPassed,
+        testsTotal: s.testsTotal,
+        language: s.language,
+      }));
+    }
+    const [project, runs] = await Promise.all([
+      prisma.project.findUniqueOrThrow({
+        where: { id: m.projectId! },
+        select: { hiddenTestCount: true, language: true },
+      }),
+      prisma.projectRun.findMany({
+        where: { matchId: m.id, kind: 'SUBMIT', ...(userId ? { userId } : {}) },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+    return runs.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      createdAt: r.createdAt.getTime(),
+      status: r.status,
+      verdict:
+        r.status !== 'DONE'
+          ? null
+          : isFullPass(r, project.hiddenTestCount)
+            ? 'ACCEPTED'
+            : 'WRONG_ANSWER',
+      testsPassed: r.passed,
+      testsTotal: r.total ?? project.hiddenTestCount,
+      language: project.language as ProjectLanguage,
+    }));
   }
 
   private async emitProgress(matchId: string, userId: string) {

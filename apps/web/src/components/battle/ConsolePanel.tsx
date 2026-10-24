@@ -163,7 +163,7 @@ function Submissions(props: {
                   {s.testsPassed ?? '–'}/{s.testsTotal ?? view.totalTests}
                 </span>
                 <span className="hidden w-20 text-xs text-ash-400 sm:block">
-                  {LANGUAGE_LABEL[s.language]}
+                  {s.language === 'node' ? 'Node.js' : LANGUAGE_LABEL[s.language]}
                 </span>
                 <span className="w-16 text-right text-xs text-ash-400">
                   {ago(s.createdAt, now)}

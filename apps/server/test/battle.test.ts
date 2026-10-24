@@ -218,6 +218,7 @@ describe('battle lifecycle', () => {
     expect(Object.keys(seen).sort()).toEqual(
       [
         'attempts',
+        'avatarUrl',
         'bestPassed',
         'connected',
         'graceEndsAt',

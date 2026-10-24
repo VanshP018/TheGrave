@@ -25,7 +25,9 @@ import {
   SwordsIcon,
 } from '../components/battle/icons';
 import type { JudgeState } from '../components/battle/Judging';
-import { MatchPanel, PlayerChip } from '../components/battle/Players';
+import { BattleHud } from '../components/battle/BattleHud';
+import { MatchPanel } from '../components/battle/Players';
+import { ProjectWorkspace } from '../components/project/ProjectWorkspace';
 import { LANGUAGE_LABEL, ProblemPanel } from '../components/battle/ProblemPanel';
 import { ResultOverlay } from '../components/battle/ResultOverlay';
 import { Splitter, useStoredPercent } from '../components/battle/Splitter';
@@ -219,20 +221,67 @@ export default function BattlePage() {
   const urgent = live && remaining <= 60_000;
 
   // Clock + Run + Submit: in the top bar normally, in the editor toolbar in focus mode (never hidden).
+  // A plain grey clock (decision.md D-068); it still turns red for the last minute: a status, not decoration.
+  const timerPill = (
+    <div
+      className={`flex h-10 items-center gap-1.5 px-2 font-mono text-base font-medium tabular-nums ${
+        urgent ? 'text-red-400' : 'text-ash-300'
+      }`}
+      data-testid="battle-timer"
+    >
+      <ClockIcon className="h-4 w-4 opacity-70" />
+      {timer}
+    </div>
+  );
+  const hud = <BattleHud v={v} mine={mine} theirs={theirs} me={me} now={now} live={live} />;
+
+  // Programming battles (decision.md D-067) play out in the debugging workspace once the codebase is out.
+  if (v.mode === 'PROGRAMMING' && v.project) {
+    return (
+      <ProjectWorkspace
+        project={v.project}
+        storageKey={`battle:${id}:files`}
+        canAct={live}
+        submit={async (files) =>
+          (await api<{ id: string }>(`/matches/${id}/submit`, { method: 'POST', json: { files } }))
+            .id
+        }
+        onSubmitted={() => void refetch()}
+        headerStart={
+          <>
+            <Link
+              to="/projects"
+              onClick={(e) => {
+                if (live && !window.confirm('Leave the arena? The clock keeps running.'))
+                  e.preventDefault();
+              }}
+              className={`flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-ash-800 ${focusRing}`}
+            >
+              <BackIcon className="h-4 w-4" />
+              Back
+            </Link>
+            <span className="h-5 w-px shrink-0 bg-ash-700" aria-hidden />
+            <p className="truncate text-sm font-semibold text-ink" data-testid="problem-title">
+              {v.project.title}
+            </p>
+            {!v.rated && (
+              <span className="hidden shrink-0 rounded-full bg-white/[0.05] px-2.5 py-0.5 text-[11px] uppercase tracking-widest text-ash-300 sm:inline">
+                Friendly · unrated
+              </span>
+            )}
+          </>
+        }
+        headerMiddle={hud}
+        headerEnd={timerPill}
+      >
+        {v.result && <ResultOverlay result={v.result} me={me} opponent={theirs} rated={v.rated} />}
+      </ProjectWorkspace>
+    );
+  }
+
   const actions = (
     <>
-      {/* The clock turns red for the last minute: a status, not decoration. */}
-      <div
-        className={`flex h-10 items-center gap-2 rounded-full border px-3.5 font-mono text-base font-semibold tabular-nums ${
-          urgent
-            ? 'border-red-500/40 bg-red-500/10 text-red-400'
-            : 'border-azure/30 bg-azure/[0.06] text-azure'
-        }`}
-        data-testid="battle-timer"
-      >
-        <ClockIcon className="h-4 w-4" />
-        {timer}
-      </div>
+      {timerPill}
       <button
         onClick={run}
         disabled={!canAct || !v.problem}
@@ -256,7 +305,8 @@ export default function BattlePage() {
   return (
     <main className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
       {/* ---- Top bar ------------------------------------------------------------------------------ */}
-      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-ash-700/60 px-3 py-2 sm:px-4 lg:h-16 lg:flex-nowrap">
+      {/* Three columns on desktop so the players sit exactly in the middle (decision.md D-068). */}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-ash-700/60 px-3 py-2 sm:px-4 lg:grid lg:h-16 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <div className="flex min-w-0 items-center gap-3">
           <Link
             to="/play"
@@ -280,13 +330,11 @@ export default function BattlePage() {
           )}
         </div>
 
-        <div className="order-last flex w-full items-center justify-center gap-2 lg:order-none lg:w-auto lg:flex-1">
-          <PlayerChip p={mine} total={v.totalTests} me now={now} />
-          <span className="text-[11px] font-semibold uppercase tracking-widest text-azure">vs</span>
-          <PlayerChip p={theirs} total={v.totalTests} now={now} testId="opponent-progress" />
-        </div>
+        {hud}
 
-        {!focus && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
+        <div className="ml-auto flex shrink-0 items-center gap-2 lg:justify-self-end">
+          {!focus && actions}
+        </div>
       </header>
 
       {!v.problem ? (

@@ -1,18 +1,13 @@
 import type { BattleView, PlayerProgress } from '@thegrave/shared';
+import { Avatar } from '../Avatar';
 import { clock } from './format';
 import { SectionTitle } from './Statement';
 
-function Presence({ p, now }: { p: PlayerProgress; now: number }) {
-  return p.connected ? (
-    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" title="Connected" />
-  ) : (
-    <span className="shrink-0 text-[11px] font-medium text-orange-400">
-      away {p.graceEndsAt ? clock(p.graceEndsAt - now) : ''}
-    </span>
-  );
-}
-
-/** Compact progress for the top bar: name and presence over a thin bar with tests passed. */
+/**
+ * A player in the battle bar (decision.md D-068): an avatar (their initial; there are no uploads), a thin
+ * progress bar and the tests passed. Names stay out of the bar (they're in the tooltip and for screen
+ * readers); your own avatar is ringed with a blue glow instead of a "You" label.
+ */
 export function PlayerChip(props: {
   p: PlayerProgress;
   total: number | null;
@@ -24,33 +19,41 @@ export function PlayerChip(props: {
   const pct = total ? Math.round((p.bestPassed / total) * 100) : 0;
   return (
     <div
-      className={`flex w-40 flex-col justify-center gap-1 rounded-md border px-3 py-1 sm:w-48 ${
-        me ? 'border-azure/30 bg-azure/[0.04]' : 'border-ash-700 bg-ash-900'
-      }`}
+      className={`flex items-center gap-2.5 ${me ? 'flex-row' : 'flex-row-reverse'}`}
       data-testid={testId}
-      title={`${p.attempts} ${p.attempts === 1 ? 'attempt' : 'attempts'}${p.pending ? ', judging' : ''}`}
+      title={`${p.username} · ${p.rating} · ${p.attempts} ${p.attempts === 1 ? 'attempt' : 'attempts'}${p.pending ? ', judging' : ''}`}
     >
-      <div className="flex items-center justify-between gap-2 text-xs leading-4">
-        <span className="truncate font-medium text-ink">
-          <span className="text-ash-400">{me ? 'You' : 'Opp'} · </span>
-          {p.username}
-        </span>
-        <Presence p={p} now={now} />
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="h-1 flex-1 overflow-hidden rounded-full bg-ash-700">
+      <span className="sr-only">
+        {me ? 'You' : 'Opponent'}: {p.username}
+      </span>
+      <span className="relative shrink-0">
+        <Avatar username={p.username} url={p.avatarUrl} size={36} glow={me} />
+        <span
+          className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-hero-bg ${
+            p.connected ? 'bg-emerald-400' : 'bg-orange-400'
+          }`}
+          title={p.connected ? 'Connected' : 'Away'}
+        />
+      </span>
+      <div className={`flex w-20 flex-col gap-1 ${me ? 'items-start' : 'items-end'}`}>
+        <div className="h-1 w-full overflow-hidden rounded-full bg-ash-700">
           <div
-            className={`h-full rounded-full transition-[width] duration-500 ${me ? 'bg-azure' : 'bg-ash-300'}`}
+            className={`h-full rounded-full transition-[width] duration-500 ${me ? 'bg-azure' : 'bg-ash-300'} ${me ? '' : 'ml-auto'}`}
             style={{ width: `${pct}%` }}
           />
         </div>
         <span
-          className="shrink-0 font-mono text-[11px] leading-4 tabular-nums text-ash-300"
+          className="font-mono text-[11px] leading-4 tabular-nums text-ash-300"
           data-testid={testId && `${testId}-passed`}
         >
           {p.bestPassed}/{total ?? '?'} tests
         </span>
       </div>
+      {!p.connected && (
+        <span className="shrink-0 text-[11px] font-medium text-orange-400">
+          away {p.graceEndsAt ? clock(p.graceEndsAt - now) : ''}
+        </span>
+      )}
     </div>
   );
 }
