@@ -56,6 +56,71 @@ export class AnthropicHintModel implements HintModel {
   }
 }
 
+/** Anthropic-shaped content (a string or text blocks) as plain text, for providers that take strings. */
+function plainText(content: string | readonly { type: string; text?: string }[]): string {
+  if (typeof content === 'string') return content;
+  return content.map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('\n\n');
+}
+
+/**
+ * Any OpenAI-compatible chat API (DeepSeek, Groq), through plain fetch with no extra dependency. The prompt is
+ * built once in Anthropic's shape (prompt.ts); here the system blocks are joined and the content flattened.
+ */
+export class OpenAICompatHintModel implements HintModel {
+  private readonly url: string;
+
+  constructor(
+    private readonly provider: string,
+    baseUrl: string,
+    private readonly apiKey: string,
+    private readonly model: string,
+  ) {
+    this.url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  }
+
+  async reply(input: {
+    system: Anthropic.Beta.BetaTextBlockParam[];
+    messages: Anthropic.Beta.BetaMessageParam[];
+  }): Promise<string> {
+    const body = {
+      model: this.model,
+      max_tokens: 1000, // replies are capped at ~80 words by the prompt
+      stream: false,
+      messages: [
+        { role: 'system', content: input.system.map((b) => b.text).join('\n\n') },
+        ...input.messages.map((m) => ({
+          role: m.role,
+          content: plainText(m.content as Parameters<typeof plainText>[0]),
+        })),
+      ],
+    };
+    let res: Response;
+    try {
+      res = await fetch(this.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new HintError('unavailable', `${this.provider} unreachable`);
+    }
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => '')).slice(0, 300);
+      console.warn(`hint model: ${this.provider} answered ${res.status}: ${detail}`);
+    }
+    if (res.status === 429) throw new HintError('busy', 'rate limited');
+    if (res.status === 401) throw new HintError('unconfigured');
+    if (!res.ok) throw new HintError('unavailable', `${this.provider} ${res.status}`);
+    const data = (await res.json().catch(() => null)) as {
+      choices?: { message?: { content?: string | null }; finish_reason?: string }[];
+    } | null;
+    const choice = data?.choices?.[0];
+    if (choice?.finish_reason === 'content_filter') return REFUSAL;
+    return choice?.message?.content?.trim() || EMPTY;
+  }
+}
+
 /** Deterministic stand-in (HINT_MODEL=fake). Echoes nothing from the input; keeps the last input for tests. */
 export class FakeHintModel implements HintModel {
   lastInput: Parameters<HintModel['reply']>[0] | null = null;
@@ -66,7 +131,25 @@ export class FakeHintModel implements HintModel {
   }
 }
 
+const deepseek = () =>
+  config.DEEPSEEK_API_KEY
+    ? new OpenAICompatHintModel(
+        'deepseek',
+        config.DEEPSEEK_BASE_URL,
+        config.DEEPSEEK_API_KEY,
+        config.DEEPSEEK_MODEL,
+      )
+    : null;
+const groq = () =>
+  config.GROQ_API_KEY
+    ? new OpenAICompatHintModel('groq', config.GROQ_BASE_URL, config.GROQ_API_KEY, config.GROQ_MODEL)
+    : null;
+const anthropic = () => (config.ANTHROPIC_API_KEY ? new AnthropicHintModel() : null);
+
+/** HINT_PROVIDER picks one explicitly; otherwise the first key that is set wins: Anthropic, DeepSeek, Groq. */
 export function createHintModel(): HintModel | null {
   if (config.HINT_MODEL === 'fake') return new FakeHintModel();
-  return config.ANTHROPIC_API_KEY ? new AnthropicHintModel() : null;
+  const byName = { anthropic, deepseek, groq };
+  if (config.HINT_PROVIDER) return byName[config.HINT_PROVIDER]();
+  return anthropic() ?? deepseek() ?? groq();
 }

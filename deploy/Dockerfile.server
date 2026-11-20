@@ -21,7 +21,7 @@ COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/server apps/server
 RUN pnpm --filter @thegrave/shared build \
- && pnpm --filter @thegrave/server exec prisma generate \
+ && DATABASE_URL=postgresql://build:build@localhost:5432/build pnpm --filter @thegrave/server exec prisma generate \
  && pnpm --filter @thegrave/server build
 # Production-only dependencies, with the workspace package copied in.
 RUN pnpm --filter @thegrave/server deploy --prod --legacy /out

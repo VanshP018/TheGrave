@@ -10,6 +10,7 @@ import {
 import { Link } from 'react-router';
 import { EASE_OUT_EXPO, fadeUp, revealOnce } from '../../lib/motion';
 import { useAuth } from '../../stores/auth';
+import { Wordmark } from '../ui';
 import {
   ArrowRightIcon,
   ClockIcon,
@@ -431,9 +432,7 @@ export function Footer() {
       <div className="relative px-6 pb-10 pt-20 md:px-10 md:pt-24 lg:px-16">
         <div className="grid gap-12 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div className="max-w-sm">
-            <Link to="/" className="text-2xl font-bold tracking-tight text-ink">
-              THE<span className="text-azure">GRAVE</span>
-            </Link>
+            <Wordmark size="lg" />
             <p className="mt-4 text-sm font-light leading-relaxed text-ash-300">
               Real-time 1v1 battles on algorithms and broken codebases. Two coders, one clock the
               server controls. The first full pass wins.

@@ -31,6 +31,21 @@ export const envSchema = z
     // deterministic stand-in for E2E and local dev.
     ANTHROPIC_API_KEY: z.string().optional(),
     HINT_MODEL: z.string().default('claude-sonnet-5-5'),
+    // OpenAI-compatible alternatives to Anthropic. HINT_PROVIDER picks one; unset = the first key that is set
+    // (Anthropic, then DeepSeek, then Groq).
+    // Characters of the player's files sent with each question. Lower it for providers with small token limits
+    // (Groq's free tier allows 8000 tokens/minute).
+    HINT_WORKSPACE_CAP: z.coerce.number().int().positive().default(120 * 1024),
+    HINT_PROVIDER: z.preprocess(
+      (v) => (v === '' ? undefined : v), // compose passes unset values as empty strings
+      z.enum(['anthropic', 'deepseek', 'groq']).optional(),
+    ),
+    DEEPSEEK_API_KEY: z.string().optional(),
+    DEEPSEEK_MODEL: z.string().default('deepseek-chat'),
+    DEEPSEEK_BASE_URL: z.string().default('https://api.deepseek.com'),
+    GROQ_API_KEY: z.string().optional(),
+    GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
+    GROQ_BASE_URL: z.string().default('https://api.groq.com/openai/v1'),
     // Outgoing mail for registration codes (decision.md D-076). Without SMTP_HOST, development logs the
     // message to the console and test writes to a Redis outbox; production refuses to boot.
     SMTP_HOST: z.string().optional(),

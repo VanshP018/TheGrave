@@ -106,6 +106,7 @@ export function Results({ run, running }: { run: SubmissionView | null; running:
                   tone={t.verdict === 'ACCEPTED' ? 'text-ink' : 'text-red-300'}
                 />
               )}
+              {t.stderr?.trim() && <Block label="Error" text={t.stderr} tone="text-red-300" />}
               {t.expected !== undefined && <Block label="Expected" text={t.expected} />}
             </div>
           )}

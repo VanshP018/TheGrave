@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 40 1170 1270" fill="none">
+  <defs>
+    <linearGradient id="hex" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a8dbff"/>
+      <stop offset="0.5" stop-color="#5cb8ff"/>
+      <stop offset="1" stop-color="#2b7fd9"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfe5ff"/>
+      <stop offset="1" stop-color="#5cb8ff"/>
+    </linearGradient>
+  </defs>
+  <path d="M665 60 1245 355 1255 990 700 1295 135 980 118 385Z" fill="url(#hex)"/>
+  <path d="M275 425 668 195 680 290 360 470 360 915 275 830Z" fill="#2b7fd9"/>
+  <path d="M275 830 360 915 700 1110 1135 940 1135 440 1085 405 1010 555 360 915Z" fill="url(#ring)"/>
+  <path d="M360 470 680 285 765 328 840 372 1005 285 1085 405 1010 555 1010 890 700 1055 360 915Z" fill="#06101c"/>
+  <path d="M1005 285 1160 338 1228 375 1255 990 700 1295 700 1195 1135 940 1135 440 1085 405Z" fill="#06101c"/>
+  <path d="M765 322 950 228 1000 240 835 335Z" fill="#06101c"/>
+  <path d="M415 505 680 360 680 395 450 530 450 895 415 870Z" fill="#6b7f96"/>
+  <path d="M570 670 1010 555 1010 668 570 895Z" fill="#5cb8ff"/>
+</svg>

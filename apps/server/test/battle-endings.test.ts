@@ -35,7 +35,12 @@ const fakeExecutor: Executor = {
     const slow = code.match(/^SLOW:(\d+);/);
     if (slow) await sleep(Number(slow[1]));
     const c = code.replace(/^SLOW:\d+;/, '');
-    const n = c === 'AC' ? tests.length : c.startsWith('PASS:') ? Number(c.slice(5)) : 0;
+    // The real judge appends the hidden driver to a bare function, so match on the script's prefix.
+    const n = c.startsWith('AC')
+      ? tests.length
+      : c.startsWith('PASS:')
+        ? Number.parseInt(c.slice(5), 10)
+        : 0;
     return summarise(
       tests.map((_, index) => ({
         index,

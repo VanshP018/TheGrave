@@ -2,6 +2,7 @@ import type { TestResultView } from '@thegrave/shared';
 import { scheduleBattleJob } from '../battle/queue.js';
 import { prisma } from '../lib/prisma.js';
 import { effectiveTimeLimitMs, type Executor } from './executor.js';
+import { withDriver } from './signatures.js';
 
 const RUN_STDOUT_LIMIT = 4096;
 const RUN_STDERR_LIMIT = 2048;
@@ -23,10 +24,15 @@ export async function processSubmission(submissionId: string, executor: Executor
   });
   await prisma.submission.update({ where: { id: sub.id }, data: { status: 'RUNNING' } });
 
-  const res = await executor.run(sub.language, sub.code, problem.testCases, {
-    timeLimitMs: effectiveTimeLimitMs(problem.timeLimitMs, sub.language),
-    memoryLimitMb: problem.memoryLimitMb,
-  });
+  const res = await executor.run(
+    sub.language,
+    withDriver(problem.slug, sub.language, sub.code),
+    problem.testCases,
+    {
+      timeLimitMs: effectiveTimeLimitMs(problem.timeLimitMs, sub.language),
+      memoryLimitMb: problem.memoryLimitMb,
+    },
+  );
 
   // Hidden test I/O never leaves the server: SUBMIT results carry verdicts and timings only.
   const results: TestResultView[] = res.tests.map((t) => {

@@ -54,13 +54,6 @@ function Taunt() {
 
 // ---- Hero --------------------------------------------------------------------------------------
 
-const STATS = [
-  { value: '30', label: 'DSA problems' },
-  { value: '5', label: 'Debug codebases' },
-  { value: '1v1', label: 'Real time' },
-  { value: '1500', label: 'Starting rating' },
-];
-
 /** Full-screen hero. The background is not in here: it is fixed behind the whole page (see LandingPage). */
 export function Hero() {
   const signedIn = useAuth((s) => s.status === 'authenticated');
@@ -138,21 +131,6 @@ export function Hero() {
           </div>
         </div>
       </motion.div>
-
-      <motion.dl
-        initial="hidden"
-        animate="show"
-        className="relative mt-20 grid grid-cols-2 gap-x-10 gap-y-8 sm:grid-cols-4"
-      >
-        {STATS.map((s, i) => (
-          <motion.div key={s.label} variants={fadeUp} custom={0.8 + i * 0.08}>
-            <dt className="text-[10px] uppercase tracking-[0.3em] text-ash-400">{s.label}</dt>
-            <dd className="mt-1 bg-gradient-to-b from-ink to-ash-400 bg-clip-text font-mono text-4xl font-semibold md:text-5xl text-transparent">
-              {s.value}
-            </dd>
-          </motion.div>
-        ))}
-      </motion.dl>
     </section>
   );
 }

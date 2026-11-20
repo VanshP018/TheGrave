@@ -50,7 +50,7 @@ export function AuthForm({ title, submitLabel, fields, submit, footer }: Props) 
     <main className="relative grid min-h-screen place-items-center px-4 py-16">
       <GlowBackdrop />
       <div className="relative w-full max-w-sm">
-        <Wordmark className="mb-8 inline-block text-xl" />
+        <Wordmark size="lg" className="mb-8" />
         <form onSubmit={onSubmit} className={`${card} space-y-5 p-6 sm:p-8`} noValidate>
           <div>
             <Eyebrow>The arena</Eyebrow>

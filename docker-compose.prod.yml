@@ -28,6 +28,12 @@ x-app-env: &app-env
   MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM to a sender verified at your mail provider}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   HINT_MODEL: ${HINT_MODEL:-claude-sonnet-5-5}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+  HINT_PROVIDER: ${HINT_PROVIDER:-}
+  HINT_WORKSPACE_CAP: ${HINT_WORKSPACE_CAP:-122880}
 
 services:
   postgres:

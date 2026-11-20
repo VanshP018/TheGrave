@@ -1,3 +1,4 @@
+import { functionSection, starterCodeFor } from '../judge/signatures.js';
 import { prisma } from '../lib/prisma.js';
 import { buildTestCases, STARTER_CODE } from './build.js';
 import { problems } from './problems.js';
@@ -13,9 +14,9 @@ for (const def of problems) {
       const data = {
         title: def.title,
         difficulty: def.difficulty,
-        statement: def.statement,
+        statement: `${def.statement}\n${functionSection(def.slug)}`.trimEnd() + '\n',
         timeLimitMs: def.timeLimitMs ?? 1000,
-        starterCode: STARTER_CODE,
+        starterCode: starterCodeFor(def.slug) ?? STARTER_CODE,
         tags: TAGS[def.slug] ?? [],
       };
       const problem = await tx.problem.upsert({

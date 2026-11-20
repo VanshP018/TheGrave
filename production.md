@@ -148,6 +148,7 @@ Then fill in the rest:
 | `SMTP_USER` / `SMTP_PASS` | your **new** provider credentials (Mailjet: API key / secret key) |
 | `MAIL_FROM` | `"TheGrave <no-reply@yourdomain.example>"`, a verified sender |
 | `ANTHROPIC_API_KEY` | optional, enables the hint coach |
+| `DEEPSEEK_API_KEY`, `GROQ_API_KEY` | optional alternatives for the hint coach; with several keys set, `HINT_PROVIDER` (`anthropic`, `deepseek` or `groq`) picks one, else the first set wins in that order |
 
 Leave `SITE_ADDRESS` commented out. `.env.production` is ignored by git; never commit it.
 
@@ -323,7 +324,7 @@ Left for you:
 | Registration says OK but no email arrives | `dc logs api` for a mail error. Check `SMTP_USER/PASS`, that `MAIL_FROM` is a verified sender, and the spam folder. New provider accounts often hold their first messages for review. |
 | Terminal and submissions hang on "Queued" | The worker is down or cannot reach Docker: `dc logs worker`, and check the sandbox images exist (`docker images | grep thegrave`; if not, `dc --profile images build`). |
 | Everyone gets "Too many requests" | The proxy setting is wrong, so all users share one IP. `TRUST_PROXY=1` must be set (it is, in `docker-compose.prod.yml`). |
-| Hint coach says "not set up" | No `ANTHROPIC_API_KEY`. Add it and `dc up -d`. |
+| Hint coach says "not set up" | No `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY` or `GROQ_API_KEY`. Add one and `dc up -d`. |
 | Logged out on every reload | The site is being opened over plain `http://` or a different domain than `DOMAIN`. |
 
 ---

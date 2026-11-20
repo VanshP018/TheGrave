@@ -20,10 +20,36 @@ export const input =
 export const focusRing =
   'outline-none focus-visible:ring-2 focus-visible:ring-azure/60 focus-visible:ring-offset-2 focus-visible:ring-offset-hero-bg';
 
-export function Wordmark({ to = '/', className = '' }: { to?: string; className?: string }) {
+/** The platform logo: the G mark with "RAVE" beside it, so the two read as GRAVE. `lg` is for auth and the footer. */
+export function Wordmark({
+  to = '/',
+  className = '',
+  size = 'md',
+}: {
+  to?: string;
+  className?: string;
+  size?: 'md' | 'lg';
+}) {
+  const lg = size === 'lg';
+  const letters = `bg-gradient-to-b from-ink to-azure-light bg-clip-text font-bold tracking-[0.14em] text-transparent ${
+    lg ? 'text-4xl' : 'text-2xl'
+  }`;
   return (
-    <Link to={to} className={`font-semibold tracking-tight text-ink ${focusRing} ${className}`}>
-      THE<span className="text-azure">GRAVE</span>
+    <Link
+      to={to}
+      aria-label="Grave home"
+      className={`inline-flex items-center ${lg ? 'gap-1' : 'gap-0.5'} ${focusRing} ${className}`}
+    >
+      <img
+        src="/logo.svg"
+        alt=""
+        width={lg ? 72 : 48}
+        height={lg ? 72 : 48}
+        className={lg ? 'h-[4.5rem] w-auto' : 'h-12 w-auto'}
+      />
+      <span aria-hidden className={`${letters} uppercase`}>
+        rave
+      </span>
     </Link>
   );
 }

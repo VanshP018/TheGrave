@@ -162,7 +162,7 @@ export function RegisterForm() {
     <main className="relative grid min-h-screen place-items-center px-4 py-16">
       <GlowBackdrop />
       <div className="relative w-full max-w-sm">
-        <Wordmark className="mb-8 inline-block text-xl" />
+        <Wordmark size="lg" className="mb-8" />
 
         {!started ? (
           <form

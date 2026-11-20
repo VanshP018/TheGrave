@@ -20,7 +20,7 @@ function Point({ title, body, i = 0 }: { title: string; body: string; i?: number
 
 const DSA_POINTS = [
   {
-    title: '30 problems, easy to hard',
+    title: 'Problems from easy to hard',
     body: 'From array basics to graphs and dynamic programming. A battle picks one neither of you has opened, so nobody walks in having solved it.',
   },
   {
@@ -95,8 +95,8 @@ export function ProgrammingMode() {
           title="Debug a real codebase."
           kicker="the bug reports are real. the fix is yours."
         >
-          Five projects, up to two dozen files each, with bugs planted in them. You don’t get a
-          problem statement, you get what a team would: the tickets that came in this week.
+          Real multi-file projects with bugs planted in them. You don’t get a problem statement, you
+          get what a team would: the tickets that came in this week.
         </SectionHeading>
 
         {/* The incident queue: what the player actually reads. */}
