@@ -17,7 +17,7 @@ export type Outcome =
 const isPending = (s: SubmissionFact) => s.status === 'QUEUED' || s.status === 'RUNNING';
 
 /**
- * Battle win rules (PLAN.md Phase 4, decision.md D-041), as a pure function of the submissions:
+ * Battle win rules (decision.md D-041), as a pure function of the submissions:
  *
  * 1. The first full ACCEPTED wins, ordered by *submission* time, not judging order: an ACCEPTED is final
  *    only if the opponent has no earlier submission still being judged (which might also be ACCEPTED).

@@ -10,5 +10,3 @@ playwright-report
 .env.*
 !.env.production.example
 docs
-PLAN.md
-decision.md

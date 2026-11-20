@@ -107,8 +107,6 @@ theGrave/
 ├── e2e/                    # Playwright end-to-end multi-browser test suite
 ├── docker-compose.yml      # Local development Postgres 17, Redis 8, Mailpit
 ├── docker-compose.prod.yml # Production multi-container orchestration
-├── PLAN.md                 # Detailed phase roadmap & execution history
-├── decision.md             # Architecture Decision Records (ADRs)
 └── production.md           # Production deployment & operations runbook
 ```
 
@@ -216,8 +214,6 @@ docker compose -f docker-compose.prod.yml up -d
 
 ## Documentation
 
-* **[PLAN.md](./PLAN.md)** — Architectural roadmap, phase definitions, and exit criteria.
-* **[decision.md](./decision.md)** — Comprehensive Architecture Decision Records (ADRs D-001 through D-080).
 * **[production.md](./production.md)** — Production deployment, secrets management, judge worker security, and rollback instructions.
 
 ---
