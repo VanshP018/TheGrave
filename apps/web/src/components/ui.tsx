@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
+import { useAuth } from '../stores/auth';
 
 /*
  * The app's shared look (black + grey + light blue, decision.md D-056/D-059). Plain class strings rather than a
@@ -22,7 +23,7 @@ export const focusRing =
 
 /** The platform logo: the G mark with "RAVE" beside it, so the two read as GRAVE. `lg` is for auth and the footer. */
 export function Wordmark({
-  to = '/',
+  to,
   className = '',
   size = 'md',
 }: {
@@ -30,13 +31,16 @@ export function Wordmark({
   className?: string;
   size?: 'md' | 'lg';
 }) {
+  const signedIn = useAuth((s) => s.status === 'authenticated');
+  // Signed-in users never see the landing page: the logo takes them to the app.
+  const dest = to ?? (signedIn ? '/play' : '/');
   const lg = size === 'lg';
   const letters = `bg-gradient-to-b from-ink to-azure-light bg-clip-text font-bold tracking-[0.14em] text-transparent ${
     lg ? 'text-4xl' : 'text-2xl'
   }`;
   return (
     <Link
-      to={to}
+      to={dest}
       aria-label="Grave home"
       className={`inline-flex items-center ${lg ? 'gap-1' : 'gap-0.5'} ${focusRing} ${className}`}
     >

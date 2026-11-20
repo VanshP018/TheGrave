@@ -22,6 +22,14 @@ export function GuestRoute() {
   return <Outlet />;
 }
 
+/** For "/": the landing page is for visitors only; signed-in users (including via the logo) go to the app. */
+export function LandingRoute() {
+  const status = useAuth((s) => s.status);
+  if (status === 'loading') return <FullScreenMessage>Loading…</FullScreenMessage>;
+  if (status === 'authenticated') return <Navigate to="/play" replace />;
+  return <Outlet />;
+}
+
 export function FullScreenMessage({ children }: { children: React.ReactNode }) {
   return (
     <main className="grid min-h-screen place-items-center text-sm uppercase tracking-widest text-ash-300">

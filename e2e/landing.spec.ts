@@ -19,7 +19,7 @@ test('landing: anonymous visitor reaches the arena through the hero CTA', async 
   await expect(page).toHaveURL(/\/register$/);
 });
 
-test('landing: section links scroll in-page and a signed-in user is offered the arena', async ({
+test('landing: section links scroll in-page and a signed-in user never sees the landing page', async ({
   page,
 }) => {
   await page.goto('/');
@@ -32,8 +32,14 @@ test('landing: section links scroll in-page and a signed-in user is offered the 
   const username = `land${Date.now() % 100000}`;
   await registerViaUi(page, username);
   await expect(page).toHaveURL(/\/play$/); // the lobby moved from / to /play
+  // Signed in: the landing page is never shown, "/" and the logo both land on the play area.
   await page.goto('/');
-  await expect(page.getByRole('link', { name: 'Enter arena' })).toHaveAttribute('href', '/play');
+  await expect(page).toHaveURL(/\/play$/);
+  await page.getByRole('link', { name: 'Your profile' }).click();
+  await expect(page).toHaveURL(new RegExp(`/u/${username}$`));
+  await expect(page.getByRole('link', { name: 'Grave home' }).first()).toHaveAttribute('href', '/play');
+  await page.getByRole('link', { name: 'Grave home' }).first().click();
+  await expect(page).toHaveURL(/\/play$/);
 });
 
 test.describe('reduced motion', () => {

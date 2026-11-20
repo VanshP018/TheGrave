@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
-import { FullScreenMessage, GuestRoute, ProtectedRoute } from './components/ProtectedRoute';
+import { FullScreenMessage, GuestRoute, LandingRoute, ProtectedRoute } from './components/ProtectedRoute';
 import { refreshSession } from './lib/api';
 import { HomePage } from './pages/HomePage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
@@ -24,14 +24,16 @@ export default function App() {
 
   return (
     <Routes>
-      <Route
-        path="/"
-        element={
-          <Suspense fallback={<div className="min-h-screen" />}>
-            <LandingPage />
-          </Suspense>
-        }
-      />
+      <Route element={<LandingRoute />}>
+        <Route
+          path="/"
+          element={
+            <Suspense fallback={<div className="min-h-screen" />}>
+              <LandingPage />
+            </Suspense>
+          }
+        />
+      </Route>
       <Route element={<GuestRoute />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
