@@ -35,15 +35,15 @@ export function AppShell({ children }: { children: ReactNode; wide?: boolean }) 
             <NavLink to="/projects" className={({ isActive }) => navLink(isActive)}>
               Programming
             </NavLink>
-            <NavLink to="/leaderboard" className={({ isActive }) => navLink(isActive)}>
-              Leaderboard
-            </NavLink>
             {/* Not built yet: the label carries a drifting light, and the page says "coming soon". */}
             <NavLink
               to="/interviews"
               className={({ isActive }) => `${navLink(isActive)} ${isActive ? '' : 'nav-wave'}`}
             >
               Interviews
+            </NavLink>
+            <NavLink to="/leaderboard" className={({ isActive }) => navLink(isActive)}>
+              Leaderboard
             </NavLink>
           </nav>
           <div className={NAV_ACTIONS}>

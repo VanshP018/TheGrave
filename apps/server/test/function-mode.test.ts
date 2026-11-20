@@ -10,10 +10,13 @@ import {
 } from '../src/judge/signatures.js';
 import { buildTestCases } from '../src/seed/build.js';
 import { problems } from '../src/seed/problems.js';
+import { extraProblems } from '../src/seed/problems-extra.js';
 
 // Players implement solve(...) only; a hidden driver parses the stdin test data and prints the answer.
 const exec = new DockerExecutor({ image: 'thegrave-judge:latest' });
-const def = (slug: string) => problems.find((p) => p.slug === slug)!;
+// Every DSA problem, old and new, runs through the same fixed `solve(...)` setup.
+const everything = [...problems, ...extraProblems];
+const def = (slug: string) => everything.find((p) => p.slug === slug)!;
 
 async function judge(slug: string, language: Language, code: string) {
   const p = def(slug);
@@ -30,11 +33,11 @@ const failures = (res: Awaited<ReturnType<typeof judge>>) =>
 
 describe('signatures', () => {
   it('cover exactly the problem set', () => {
-    expect(Object.keys(SIGNATURES).sort()).toEqual(problems.map((p) => p.slug).sort());
+    expect(Object.keys(SIGNATURES).sort()).toEqual(everything.map((p) => p.slug).sort());
   });
 
   it('starter code is a bare function: no input handling', () => {
-    for (const p of problems) {
+    for (const p of everything) {
       const s = starterCodeFor(p.slug)!;
       expect(s.python, p.slug).toContain('def solve(');
       expect(s.python, p.slug).not.toMatch(/sys\.stdin|input\(/);
@@ -234,14 +237,14 @@ describe('function-style solutions are ACCEPTED', () => {
 });
 
 // Every problem: the untouched C++ starter (returns a default) must compile and run through the driver, so a
-// parsing or type error in any of the 30 drivers shows up here as COMPILE_ERROR / RUNTIME_ERROR.
+// parsing or type error in any of the 70 drivers shows up here as COMPILE_ERROR / RUNTIME_ERROR.
 describe('every driver compiles and runs on its starter', () => {
-  // Compiled a few at a time: thirty simultaneous g++ runs on a small machine hit the compile timeout.
-  it('all 30', { timeout: 600_000 }, async () => {
+  // Compiled a few at a time: dozens of simultaneous g++ runs on a small machine hit the compile timeout.
+  it('all 70', { timeout: 900_000 }, async () => {
     const bad: string[] = [];
-    for (let i = 0; i < problems.length; i += 4) {
+    for (let i = 0; i < everything.length; i += 4) {
       await Promise.all(
-        problems.slice(i, i + 4).map(async (p) => {
+        everything.slice(i, i + 4).map(async (p) => {
           const res = await judge(p.slug, 'cpp', starterCodeFor(p.slug)!.cpp);
           if (res.compileOutput) bad.push(`${p.slug}: ${res.compileOutput.slice(0, 400)}`);
           for (const t of res.tests)
