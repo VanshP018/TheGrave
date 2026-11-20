@@ -7,7 +7,8 @@ import type { Language } from '@thegrave/shared';
  */
 
 type Ty = 'int' | 'str' | 'ints' | 'strs' | 'matrix';
-type Ret = 'int' | 'bool' | 'str' | 'ints' | 'maybeInt' | 'intLines' | 'strLines' | 'intervals';
+type Ret =
+  'int' | 'bool' | 'str' | 'ints' | 'maybeInt' | 'intLines' | 'strLines' | 'intervals' | 'half'; // a median-like number: printed without a decimal point when whole, else with one digit
 
 /** How the stdin is laid out, one step per line (or per group of lines), in order. */
 type Step =
@@ -234,6 +235,317 @@ export const SIGNATURES: Record<string, Signature> = {
     ret: 'int',
     retDoc: 'the largest rectangle area',
   },
+
+  // ---- second batch (problems-easy / -medium / -hard) ----------------------------------------
+  'peak-elements': {
+    steps: [{ ints: ['n'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the n altitudes')],
+    ret: 'int',
+    retDoc: 'the number of peaks',
+  },
+  'run-length-encode': {
+    steps: [{ line: 's' }],
+    params: [p('s', 'str', 'a string of lowercase letters')],
+    ret: 'str',
+    retDoc: 'the run-length encoding of s',
+  },
+  'rotate-right': {
+    steps: [{ ints: ['n', 'k'] }, { arr: 'a' }],
+    params: [
+      p('a', 'ints', 'the n values in seat order'),
+      p('k', 'int', 'how many seats to turn the carousel (up to 10^9)'),
+    ],
+    ret: 'ints',
+    retDoc: 'the arrangement after rotating right by k seats',
+  },
+  'closest-to-zero': {
+    steps: [{ ints: ['n'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the n readings')],
+    ret: 'int',
+    retDoc: 'the reading closest to zero (the positive one if two tie)',
+  },
+  'digit-sum-steps': {
+    steps: [{ line: 's' }],
+    params: [p('s', 'str', 'the decimal digits of N (up to 10^5 digits)')],
+    ret: 'int',
+    retDoc: 'the number of digit-sum steps until one digit is left',
+  },
+  'longest-common-prefix': {
+    steps: [{ ints: ['n'] }, { grid: 'words', rows: 'n' }],
+    params: [p('words', 'strs', 'the n words')],
+    ret: 'str',
+    retDoc: 'the longest common prefix, or "NONE" if there is none',
+  },
+  'unique-once-count': {
+    steps: [{ ints: ['n'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the n scanned IDs')],
+    ret: 'int',
+    retDoc: 'how many distinct IDs appear exactly once',
+  },
+  'stair-ways': {
+    steps: [{ ints: ['n'] }],
+    params: [p('n', 'int', 'the number of steps')],
+    ret: 'int',
+    retDoc: 'the number of ways to climb them, modulo 10^9 + 7',
+  },
+  'binary-gap': {
+    steps: [{ ints: ['n'] }],
+    params: [p('n', 'int', 'the number N (up to 10^18)')],
+    ret: 'int',
+    retDoc: 'the length of the longest gap of zeros between two ones',
+  },
+  'subarray-sum-k': {
+    steps: [{ ints: ['n', 'k'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the n daily profits'), p('k', 'int', 'the target total')],
+    ret: 'int',
+    retDoc: 'the number of streaks whose total is exactly k',
+  },
+  'product-except-self': {
+    steps: [{ ints: ['n'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the n integers')],
+    ret: 'ints',
+    retDoc: 'for each position the product of all the other elements, modulo 10^9 + 7',
+  },
+  'shortest-substring-all-chars': {
+    steps: [{ line: 's' }],
+    params: [p('s', 'str', 'a string of lowercase letters')],
+    ret: 'int',
+    retDoc: 'the length of the shortest substring containing every distinct letter of s',
+  },
+  'meeting-rooms-min': {
+    steps: [{ ints: ['n'] }, { matrix: 'meetings', rows: 'n' }],
+    params: [p('meetings', 'matrix', 'the n meetings, each [start, end) with start < end')],
+    ret: 'int',
+    retDoc: 'the minimum number of rooms',
+  },
+  'search-rotated-array': {
+    steps: [{ ints: ['n', 'q'] }, { arr: 'shelf' }, { arr: 'queries' }],
+    params: [
+      p('shelf', 'ints', 'the n distinct shelf numbers (a sorted shelf, then rotated)'),
+      p('queries', 'ints', 'the q values to look up'),
+    ],
+    ret: 'intLines',
+    retDoc: 'for each query its 0-based position on the shelf, or -1 if it is missing',
+  },
+  'ship-capacity': {
+    steps: [{ ints: ['n', 'days'] }, { arr: 'weights' }],
+    params: [
+      p('weights', 'ints', 'the n package weights, in conveyor order'),
+      p('days', 'int', 'the deadline D in days'),
+    ],
+    ret: 'int',
+    retDoc: 'the smallest capacity that ships everything within the deadline',
+  },
+  'min-jumps': {
+    steps: [{ ints: ['n'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the longest jump allowed from each pad')],
+    ret: 'int',
+    retDoc: 'the minimum number of jumps to reach the last pad, or -1 if it is unreachable',
+  },
+  'provinces-count': {
+    steps: [{ ints: ['n', 'm'] }, { matrix: 'roads', rows: 'm' }],
+    params: [
+      p('n', 'int', 'the number of towns'),
+      p('roads', 'matrix', 'the m two-way roads, each [u, v]'),
+    ],
+    ret: 'int',
+    retDoc: 'the number of kingdoms (connected groups of towns)',
+  },
+  'bipartite-check': {
+    steps: [{ ints: ['n', 'm'] }, { matrix: 'rivalries', rows: 'm' }],
+    params: [
+      p('n', 'int', 'the number of players'),
+      p('rivalries', 'matrix', 'the m rival pairs, each [u, v]'),
+    ],
+    ret: 'bool',
+    retDoc:
+      'true if the players can be split into two teams with no rivals together (printed as YES, otherwise NO)',
+  },
+  'word-break-count': {
+    steps: [{ ints: ['k'] }, { grid: 'words', rows: 'k' }, { line: 's' }],
+    params: [
+      p('words', 'strs', 'the k dictionary words'),
+      p('s', 'str', 'the string to cut into dictionary words'),
+    ],
+    ret: 'int',
+    retDoc: 'the number of segmentations, modulo 10^9 + 7',
+  },
+  'house-robber-circular': {
+    steps: [{ ints: ['n'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the coins in each of the n houses, in order around the circle')],
+    ret: 'int',
+    retDoc: 'the maximum number of coins the thief can take',
+  },
+  'partition-equal-subset': {
+    steps: [{ ints: ['n'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the n item values')],
+    ret: 'bool',
+    retDoc:
+      'true if the items can be split into two groups of equal value (printed as YES, otherwise NO)',
+  },
+  'top-k-frequent': {
+    steps: [{ ints: ['n', 'k'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the n played song IDs'), p('k', 'int', 'how many IDs to report')],
+    ret: 'ints',
+    retDoc: 'the k most played IDs, most played first, the smaller ID first on ties',
+  },
+  'tree-diameter': {
+    steps: [{ ints: ['n'] }, { matrix: 'cables', rows: 'n - 1' }],
+    params: [
+      p('n', 'int', 'the number of computers'),
+      p('cables', 'matrix', 'the n - 1 cables, each [u, v]'),
+    ],
+    ret: 'int',
+    retDoc: 'the diameter: the number of cables on the longest route',
+  },
+  'lca-queries': {
+    steps: [
+      { ints: ['n', 'q'] },
+      { matrix: 'links', rows: 'n - 1' },
+      { matrix: 'queries', rows: 'q' },
+    ],
+    params: [
+      p('n', 'int', 'the number of people; person 1 is the root ancestor'),
+      p('links', 'matrix', 'the n - 1 parent-child links, each [u, v] in either order'),
+      p('queries', 'matrix', 'the q queries, each [u, v]'),
+    ],
+    ret: 'intLines',
+    retDoc: 'the lowest common ancestor of each query pair, in order',
+  },
+  'gas-station': {
+    steps: [{ ints: ['n'] }, { arr: 'gas' }, { arr: 'cost' }],
+    params: [
+      p('gas', 'ints', 'the fuel sold at each of the n stations'),
+      p('cost', 'ints', 'the fuel needed to drive from each station to the next'),
+    ],
+    ret: 'int',
+    retDoc: 'the smallest starting index that completes the circle, or -1',
+  },
+  'max-product-subarray': {
+    steps: [{ ints: ['n'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the n integers')],
+    ret: 'int',
+    retDoc: 'the largest product of a non-empty block of consecutive elements',
+  },
+  'longest-subarray-diff': {
+    steps: [{ ints: ['n', 'k'] }, { arr: 'a' }],
+    params: [
+      p('a', 'ints', 'the n readings'),
+      p('k', 'int', 'the largest allowed difference between the maximum and minimum of a block'),
+    ],
+    ret: 'int',
+    retDoc: 'the length of the longest calm block',
+  },
+  'pattern-occurrences': {
+    steps: [{ line: 't' }, { line: 'p' }],
+    params: [p('t', 'str', 'the text'), p('p', 'str', 'the pattern')],
+    ret: 'int',
+    retDoc: 'the number of positions where p occurs in t (overlaps count)',
+  },
+  'longest-valid-parens': {
+    steps: [{ line: 's' }],
+    params: [p('s', 'str', 'a string of "(" and ")"')],
+    ret: 'int',
+    retDoc: 'the length of the longest well-formed substring',
+  },
+  'lcs-length': {
+    steps: [{ line: 'a' }, { line: 'b' }],
+    params: [p('a', 'str', 'the first string'), p('b', 'str', 'the second string')],
+    ret: 'int',
+    retDoc: 'the length of their longest common subsequence',
+  },
+  'min-palindrome-cuts': {
+    steps: [{ line: 's' }],
+    params: [p('s', 'str', 'a string of lowercase letters')],
+    ret: 'int',
+    retDoc: 'the minimum number of cuts so that every piece is a palindrome',
+  },
+  'k-edge-shortest-path': {
+    steps: [{ ints: ['n', 'm', 'k'] }, { matrix: 'flights', rows: 'm' }],
+    params: [
+      p('n', 'int', 'the number of cities'),
+      p('flights', 'matrix', 'the m one-way flights, each [u, v, w]'),
+      p('k', 'int', 'the most flights you may use'),
+    ],
+    ret: 'int',
+    retDoc: 'the minimum cost from city 1 to city n using at most k flights, or -1',
+  },
+  'scc-count': {
+    steps: [{ ints: ['n', 'm'] }, { matrix: 'roads', rows: 'm' }],
+    params: [
+      p('n', 'int', 'the number of junctions'),
+      p('roads', 'matrix', 'the m directed roads, each [u, v]'),
+    ],
+    ret: 'ints',
+    retDoc: 'two values: [the number of groups, the size of the largest group]',
+  },
+  'bridge-count': {
+    steps: [{ ints: ['n', 'm'] }, { matrix: 'cables', rows: 'm' }],
+    params: [
+      p('n', 'int', 'the number of servers'),
+      p('cables', 'matrix', 'the m two-way cables, each [u, v]'),
+    ],
+    ret: 'int',
+    retDoc: 'the number of critical cables (bridges)',
+  },
+  'count-paths-dag': {
+    steps: [{ ints: ['n', 'm'] }, { matrix: 'dependencies', rows: 'm' }],
+    params: [
+      p('n', 'int', 'the number of stages'),
+      p('dependencies', 'matrix', 'the m one-way dependencies, each [u, v]; the graph is acyclic'),
+    ],
+    ret: 'int',
+    retDoc: 'the number of routes from stage 1 to stage n, modulo 10^9 + 7',
+  },
+  'range-update-queries': {
+    steps: [{ ints: ['n', 'q'] }, { arr: 'a' }, { matrix: 'ops', rows: 'q' }],
+    params: [
+      p('a', 'ints', 'the n initial scores'),
+      p(
+        'ops',
+        'matrix',
+        'the q operations: [1, i, v] adds v to player i, [2, l, r] asks for the sum of players l..r (1-indexed)',
+      ),
+    ],
+    ret: 'intLines',
+    retDoc: 'the answer to each [2, l, r] operation, in order',
+  },
+  'median-two-sorted': {
+    steps: [{ ints: ['n', 'm'] }, { arr: 'a' }, { arr: 'b' }],
+    params: [
+      p('a', 'ints', 'the n numbers of the first sorted list'),
+      p('b', 'ints', 'the m numbers of the second sorted list'),
+    ],
+    ret: 'half',
+    retDoc:
+      'the median of the merged list: a whole number, or a number ending in .5 (return a float / double)',
+  },
+  'lis-count': {
+    steps: [{ ints: ['n'] }, { arr: 'a' }],
+    params: [p('a', 'ints', 'the n integers')],
+    ret: 'ints',
+    retDoc:
+      'two values: [the length of the longest strictly increasing subsequence, how many there are modulo 10^9 + 7]',
+  },
+  'tsp-small': {
+    steps: [{ ints: ['n'] }, { matrix: 'd', rows: 'n' }],
+    params: [
+      p(
+        'd',
+        'matrix',
+        'the n × n cost matrix: d[i][j] is the cost of driving from city i + 1 to city j + 1',
+      ),
+    ],
+    ret: 'int',
+    retDoc:
+      'the minimum cost of a round trip that starts and ends in city 1 and visits every city once',
+  },
+  'weighted-intervals': {
+    steps: [{ ints: ['n'] }, { matrix: 'requests', rows: 'n' }],
+    params: [p('requests', 'matrix', 'the n booking requests, each [start, end, payment]')],
+    ret: 'int',
+    retDoc: 'the maximum total payment from non-overlapping accepted requests',
+  },
 };
 
 // ---- types per language ---------------------------------------------------------------------
@@ -261,6 +573,7 @@ const PY_RET: Record<Ret, string> = {
   intLines: 'List[int]',
   strLines: 'List[str]',
   intervals: 'List[List[int]]',
+  half: 'float',
 };
 const CPP_RET: Record<Ret, string> = {
   int: 'long long',
@@ -271,6 +584,7 @@ const CPP_RET: Record<Ret, string> = {
   intLines: 'vector<long long>',
   strLines: 'vector<string>',
   intervals: 'vector<vector<long long>>',
+  half: 'double',
 };
 const CPP_DEFAULT: Record<Ret, string> = {
   int: '0',
@@ -281,6 +595,7 @@ const CPP_DEFAULT: Record<Ret, string> = {
   intLines: '{}',
   strLines: '{}',
   intervals: '{}',
+  half: '0',
 };
 
 // ---- starter code ---------------------------------------------------------------------------
@@ -359,6 +674,7 @@ function pythonDriver(sig: Signature): string {
     intLines: ['print("\\n".join(map(str, _r)))'],
     strLines: ['print("\\n".join(map(str, _r)))'],
     intervals: ['print(len(_r))', 'print("\\n".join(f"{x[0]} {x[1]}" for x in _r))'],
+    half: ['print(int(_r) if _r == int(_r) else f"{_r:.1f}")'],
   };
   const body = [
     'import sys',
@@ -434,6 +750,7 @@ function cppDriver(sig: Signature): string {
     strLines: 'for (const auto& x : _r) std::cout << x << "\\n";',
     intervals:
       'std::cout << _r.size() << "\\n"; for (const auto& x : _r) std::cout << x[0] << " " << x[1] << "\\n";',
+    half: '{ double _d = static_cast<double>(_r); if (_d == std::floor(_d)) std::cout << static_cast<long long>(_d); else std::cout << std::fixed << std::setprecision(1) << _d; std::cout << "\\n"; }',
   };
   return `\n${CPP_HELPERS}
 // ---- grader: reads the input and prints the answer (not part of your code) ----

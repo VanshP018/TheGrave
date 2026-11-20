@@ -1118,19 +1118,19 @@ For \`g = 1 2 3 4 5\` and \`c = 3 4 5 1 2\` the answer is 3. Starting at station
 
 For \`2 3 -2 4\` the best block is \`2 3\` with product 6 (including \`-2\` would make the product negative). For \`-2 0 -1\` the answer is 0: every block containing 0 has product 0, and the single elements are -2 and -1.
 
-The product can be much larger than a 64-bit integer, so print the exact value.`,
+The values are small enough that the answer always fits in a signed 64-bit integer (at most 10^18).`,
       'The first line contains `n`. The second line contains `n` integers `a1 … an`.',
-      'Print the maximum product of a non-empty block of consecutive elements, exactly.',
-      ['1 ≤ n ≤ 60', '|ai| ≤ 10'],
+      'Print the maximum product of a non-empty block of consecutive elements.',
+      ['1 ≤ n ≤ 18', '|ai| ≤ 10'],
     ),
     samples: ['4\n2 3 -2 4\n', '3\n-2 0 -1\n'],
     hidden: (r) => [
       arrInput([-5]),
-      arrInput(range(60, () => -10)),
-      arrInput(range(59, () => -10)),
+      arrInput(range(18, () => -10)),
+      arrInput(range(17, () => -10)),
       arrInput([3, -1, 0, 2, 2, -5, 1, 0, -4]),
-      arrInput(r.ints(60, -10, 10)),
-      arrInput(r.ints(60, -3, 3)),
+      arrInput(r.ints(18, -10, 10)),
+      arrInput(r.ints(18, -3, 3)),
     ],
     solve: (s) => {
       const [n, ...rest] = nums(s);
