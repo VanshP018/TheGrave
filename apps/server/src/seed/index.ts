@@ -2,11 +2,13 @@ import { functionSection, starterCodeFor } from '../judge/signatures.js';
 import { prisma } from '../lib/prisma.js';
 import { buildTestCases, STARTER_CODE } from './build.js';
 import { problems } from './problems.js';
+import { extraProblems } from './problems-extra.js';
 import { projectData, projects } from './projects.js';
 import { TAGS } from './tags.js';
 
 // Idempotent: upserts problems by slug and replaces their test cases.
-for (const def of problems) {
+const allProblems = [...problems, ...extraProblems];
+for (const def of allProblems) {
   const started = performance.now();
   const tests = buildTestCases(def);
   await prisma.$transaction(
@@ -34,7 +36,7 @@ for (const def of problems) {
     `${def.difficulty.padEnd(6)} ${def.slug.padEnd(32)} ${String(tests.length).padStart(2)} tests  ${ms}ms`,
   );
 }
-console.log(`seeded ${problems.length} problems`);
+console.log(`seeded ${allProblems.length} problems`);
 for (const def of projects) {
   const data = projectData(def);
   await prisma.project.upsert({

@@ -18,21 +18,21 @@ export interface ProblemDef {
 
 // ---- helpers -------------------------------------------------------------------------------
 
-const nums = (s: string) => s.split(/\s+/).filter(Boolean).map(Number);
-const lines = (s: string) => s.split('\n').map((l) => l.trim());
-const arrInput = (a: number[], head: (number | string)[] = [a.length]) =>
+export const nums = (s: string) => s.split(/\s+/).filter(Boolean).map(Number);
+export const lines = (s: string) => s.split('\n').map((l) => l.trim());
+export const arrInput = (a: number[], head: (number | string)[] = [a.length]) =>
   `${head.join(' ')}\n${a.join(' ')}\n`;
-const range = <T = number>(n: number, f: (i: number) => T): T[] =>
+export const range = <T = number>(n: number, f: (i: number) => T): T[] =>
   Array.from({ length: n }, (_, i) => f(i));
 
 /** Strip the common indentation so Python sources can be written inline. */
-function py(src: string): string {
+export function py(src: string): string {
   const ls = src.replace(/^\n/, '').replace(/\s+$/, '').split('\n');
   const indent = Math.min(...ls.filter((l) => l.trim()).map((l) => l.match(/^ */)![0].length));
   return ls.map((l) => l.slice(indent)).join('\n') + '\n';
 }
 
-const statement = (body: string, input: string, output: string, constraints: string[]) =>
+export const statement = (body: string, input: string, output: string, constraints: string[]) =>
   `${body}\n\n### Input\n${input}\n\n### Output\n${output}\n\n### Constraints\n${constraints.map((c) => `- ${c}`).join('\n')}\n`;
 
 const balancedBrackets = (r: Rng, pairs: number) => {
@@ -63,7 +63,7 @@ const randomGrid = (r: Rng, n: number, m: number, landProb: number) =>
     )
     .join('\n');
 
-const randomDag = (r: Rng, n: number, m: number) => {
+export const randomDag = (r: Rng, n: number, m: number) => {
   const order = r.shuffle(range(n, (i) => i + 1));
   const edges: [number, number][] = [];
   for (let i = 0; i < m; i++) {
@@ -76,7 +76,7 @@ const randomDag = (r: Rng, n: number, m: number) => {
   return edges;
 };
 
-const edgeInput = (n: number, edges: number[][]) =>
+export const edgeInput = (n: number, edges: number[][]) =>
   `${n} ${edges.length}\n${edges.map((e) => e.join(' ')).join('\n')}${edges.length ? '\n' : ''}`;
 
 // ---- problems ------------------------------------------------------------------------------

@@ -37,7 +37,10 @@ test('landing: section links scroll in-page and a signed-in user never sees the 
   await expect(page).toHaveURL(/\/play$/);
   await page.getByRole('link', { name: 'Your profile' }).click();
   await expect(page).toHaveURL(new RegExp(`/u/${username}$`));
-  await expect(page.getByRole('link', { name: 'Grave home' }).first()).toHaveAttribute('href', '/play');
+  await expect(page.getByRole('link', { name: 'Grave home' }).first()).toHaveAttribute(
+    'href',
+    '/play',
+  );
   await page.getByRole('link', { name: 'Grave home' }).first().click();
   await expect(page).toHaveURL(/\/play$/);
 });
