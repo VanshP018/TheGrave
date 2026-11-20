@@ -25,7 +25,8 @@ export function AppShell({ children }: { children: ReactNode; wide?: boolean }) 
       {/* Full width like the landing nav (decision.md D-073): brand far left, sections centred, search +
           profile + log out far right. On phones the sections and search drop to their own row. */}
       <header className="sticky top-0 z-40 border-b border-ash-700/60 bg-hero-bg/75 backdrop-blur-md">
-        <div className={NAV_ROW}>
+        {/* Below xl the search drops to its own row, so the bar grows instead of keeping NAV_ROW's fixed height. */}
+        <div className={`${NAV_ROW} md:h-auto! md:py-2 xl:h-16! xl:py-0`}>
           <Wordmark className={NAV_BRAND} />
           <nav aria-label="Main" className={NAV_LINKS}>
             <NavLink to="/play" className={({ isActive }) => navLink(isActive)}>
@@ -37,9 +38,16 @@ export function AppShell({ children }: { children: ReactNode; wide?: boolean }) 
             <NavLink to="/leaderboard" className={({ isActive }) => navLink(isActive)}>
               Leaderboard
             </NavLink>
+            {/* Not built yet: the label carries a drifting light, and the page says "coming soon". */}
+            <NavLink
+              to="/interviews"
+              className={({ isActive }) => `${navLink(isActive)} ${isActive ? '' : 'nav-wave'}`}
+            >
+              Interviews
+            </NavLink>
           </nav>
           <div className={NAV_ACTIONS}>
-            <div className="hidden md:block">
+            <div className="hidden xl:block">
               <UserSearch />
             </div>
             {/* The profile button: your avatar, ringed in blue while you're on your profile (D-070). */}
@@ -57,12 +65,12 @@ export function AppShell({ children }: { children: ReactNode; wide?: boolean }) 
             )}
             <button
               onClick={logout}
-              className={`min-h-9 cursor-pointer text-xs uppercase tracking-widest text-ash-300 transition-colors duration-200 hover:text-azure ${focusRing}`}
+              className={`min-h-9 cursor-pointer whitespace-nowrap text-xs uppercase tracking-widest text-ash-300 transition-colors duration-200 hover:text-azure ${focusRing}`}
             >
               Log out
             </button>
           </div>
-          <div className="order-last w-full md:hidden">
+          <div className="order-last flex w-full justify-center xl:hidden md:col-span-3">
             <UserSearch />
           </div>
         </div>

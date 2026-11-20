@@ -63,7 +63,7 @@ export function UserSearch() {
 
   const showList = open && q.length > 0 && q === text.trim();
   return (
-    <div ref={box} className="relative w-full md:w-56 lg:w-64">
+    <div ref={box} className="relative w-full md:w-72 xl:w-52 2xl:w-64">
       <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ash-400" />
       <input
         type="search"

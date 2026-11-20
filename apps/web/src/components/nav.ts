@@ -12,11 +12,11 @@ export const NAV_BRAND = 'text-xl md:justify-self-start';
 
 /** The centred link group; drops to its own full-width row on phones. */
 export const NAV_LINKS =
-  'order-last flex w-full justify-center gap-x-6 md:order-none md:w-auto md:gap-x-9';
+  'order-last flex w-full justify-center gap-x-3 sm:gap-x-6 md:order-none md:w-auto md:gap-x-6 xl:gap-x-8 2xl:gap-x-9';
 
 export const NAV_ACTIONS = 'ml-auto flex items-center gap-4 md:ml-0 md:justify-self-end';
 
-const linkBase = `relative flex h-10 items-center text-xs uppercase tracking-widest transition-colors duration-200 md:h-16 ${focusRing}`;
+const linkBase = `relative flex h-10 items-center text-xs uppercase tracking-widest max-sm:tracking-wider transition-colors duration-200 md:h-16 ${focusRing}`;
 
 /** A section link; the active underline sits on the header's bottom edge, whatever the row height. */
 export const navLink = (active = false) =>

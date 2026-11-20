@@ -60,3 +60,32 @@ body {
     animation: none;
   }
 }
+
+/* A soft band of light that drifts across a nav label, for destinations that are coming soon. */
+@keyframes nav-wave {
+  to {
+    background-position: -200% 0;
+  }
+}
+.nav-wave {
+  background-image: linear-gradient(
+    105deg,
+    var(--color-ash-300) 35%,
+    var(--color-azure-light) 47%,
+    #fff 50%,
+    var(--color-azure-light) 53%,
+    var(--color-ash-300) 65%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: nav-wave 3.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-wave {
+    background-image: none;
+    color: var(--color-ash-300);
+    animation: none;
+  }
+}

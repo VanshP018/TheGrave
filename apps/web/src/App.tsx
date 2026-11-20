@@ -1,8 +1,14 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
-import { FullScreenMessage, GuestRoute, LandingRoute, ProtectedRoute } from './components/ProtectedRoute';
+import {
+  FullScreenMessage,
+  GuestRoute,
+  LandingRoute,
+  ProtectedRoute,
+} from './components/ProtectedRoute';
 import { refreshSession } from './lib/api';
 import { HomePage } from './pages/HomePage';
+import { InterviewsPage } from './pages/InterviewsPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -50,6 +56,7 @@ export default function App() {
           }
         />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
+        <Route path="/interviews" element={<InterviewsPage />} />
         <Route path="/u/:username" element={<ProfilePage />} />
         <Route
           path="/practice/:slug"
