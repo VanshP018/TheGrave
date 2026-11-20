@@ -1,10 +1,12 @@
 import {
   avatarUploadSchema,
+  type ActivityView,
   AVATAR_MAX_BYTES,
   profileUpdateSchema,
   type LeaderboardPage,
   type MatchHistoryItem,
   type MatchHistoryPage,
+  type PointsLeaderboardPage,
   type ProfileView,
   type SocialLinks,
   type UserSearchHit,
@@ -16,6 +18,7 @@ import { prisma } from '../../lib/prisma.js';
 import { DEFAULT_RATING } from '../../rating/glicko2.js';
 import type { Leaderboard } from '../../rating/leaderboard.js';
 import { effectiveRd, PROVISIONAL_RD } from '../../rating/policy.js';
+import { pointsLeaderboard, userActivity } from '../activity/points.js';
 
 const pageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
@@ -62,6 +65,23 @@ export async function userRoutes(
       ...(await leaderboard.page(offset, limit, viewerId)),
       institution: viewer?.institution ?? null,
     };
+  });
+
+  // Ranking by problems solved: 1 point per easy, 3 per medium, 5 per hard, DSA and programming together.
+  app.get('/leaderboard/problems', async (req): Promise<PointsLeaderboardPage> => {
+    const { offset, limit, scope } = pageQuery.parse(req.query);
+    const viewerId = req.auth!.userId;
+    const viewer = await prisma.user.findUnique({
+      where: { id: viewerId },
+      select: { institution: true },
+    });
+    return pointsLeaderboard({
+      scope,
+      viewerId,
+      institution: viewer?.institution ?? null,
+      offset,
+      limit,
+    });
   });
 
   // Navbar search (decision.md D-073): usernames starting with q, case-insensitive, best rated first.
@@ -132,6 +152,17 @@ export async function userRoutes(
       ],
     };
     return body;
+  });
+
+  // The profile's problems-solved section: totals, streaks, standing and the heat map's days.
+  app.get('/users/:username/activity', async (req, reply): Promise<ActivityView | undefined> => {
+    const { username } = usernameParams.parse(req.params);
+    const user = await prisma.user.findUnique({
+      where: { username },
+      select: { id: true, institution: true },
+    });
+    if (!user) return reply.code(404).send(notFound);
+    return userActivity(user.id, user.institution);
   });
 
   app.get('/users/:username/matches', async (req, reply) => {

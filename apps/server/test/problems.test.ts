@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DockerExecutor } from '../src/judge/docker-executor.js';
 import { effectiveTimeLimitMs } from '../src/judge/executor.js';
 import { buildTestCases } from '../src/seed/build.js';
@@ -7,6 +7,9 @@ import { extraProblems } from '../src/seed/problems-extra.js';
 import { TAGS } from '../src/seed/tags.js';
 
 const everything = [...problems, ...extraProblems];
+
+// Seventy sandboxes judged at once make the Python time limits flaky on a busy machine: keep a few in flight.
+vi.setConfig({ maxConcurrency: 3 });
 
 const exec = new DockerExecutor({ image: 'thegrave-judge:latest' });
 

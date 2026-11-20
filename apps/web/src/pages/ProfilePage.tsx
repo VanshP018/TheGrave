@@ -10,6 +10,7 @@ import { Link, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Avatar } from '../components/Avatar';
 import { CameraIcon, GraduationCapIcon, PencilIcon } from '../components/play/icons';
+import { ActivitySection } from '../components/profile/Activity';
 import { ProfileEditor, SOCIAL } from '../components/profile/ProfileEditor';
 import { RatingChart } from '../components/RatingChart';
 import { btnSecondary, focusRing } from '../components/ui';
@@ -356,6 +357,9 @@ export function ProfilePage() {
             </div>
           </div>
         </section>
+
+        {/* ---- Problems solved: points, heat map, streaks ------------------------------------------ */}
+        <ActivitySection username={p.username} />
 
         {/* ---- Rating history ---------------------------------------------------------------------- */}
         <section aria-labelledby="rating-history">
