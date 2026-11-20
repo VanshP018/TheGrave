@@ -46,3 +46,9 @@
 		format json
 	}
 }
+
+# www gets its own certificate and a permanent redirect to the bare domain, so sign-in cookies and CORS only
+# ever see one origin.
+{$WWW_ADDRESS:www.localhost} {
+	redir https://{$DOMAIN:localhost}{uri} permanent
+}
