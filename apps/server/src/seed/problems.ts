@@ -1357,6 +1357,7 @@ export const problems: ProblemDef[] = [
     slug: 'minimum-spanning-tree',
     title: 'Minimum Spanning Tree',
     difficulty: 'HARD',
+    timeLimitMs: 2000,
     statement: statement(
       'Find the total weight of a minimum spanning tree of an undirected weighted graph.',
       'The first line contains `n m`. Each of the next `m` lines contains `u v w`, an undirected edge (u ≠ v). Parallel edges may appear.',

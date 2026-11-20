@@ -180,6 +180,7 @@ Note that the whole string is always complete, so an answer always exists.`,
     slug: 'meeting-rooms-min',
     title: 'Fewest Meeting Rooms',
     difficulty: 'MEDIUM',
+    timeLimitMs: 2000,
     statement: statement(
       `A company has \`n\` meetings. Meeting \`i\` occupies a room from time \`si\` up to (but not including) time \`ei\`. Two meetings can use the **same room** if one ends no later than the other starts: a meeting ending at time 5 and another starting at time 5 do not conflict.
 
@@ -432,6 +433,7 @@ If \`n = 1\` the frog is already at the goal and the answer is 0.`,
     slug: 'provinces-count',
     title: 'Count the Kingdoms',
     difficulty: 'MEDIUM',
+    timeLimitMs: 2000,
     statement: statement(
       `A continent has \`n\` towns numbered 1 to \`n\` and \`m\` two-way roads. Two towns belong to the same **kingdom** if you can travel from one to the other along roads, possibly through other towns. A town with no roads is a kingdom of its own.
 
@@ -509,6 +511,7 @@ Several roads may connect the same pair of towns, but no road connects a town to
     slug: 'bipartite-check',
     title: 'Two Teams, No Rivals',
     difficulty: 'MEDIUM',
+    timeLimitMs: 2000,
     statement: statement(
       `There are \`n\` players and \`m\` pairs of rivals. The coach wants to split all players into **two teams** (a team may be empty) so that no two rivals end up on the **same** team.
 
@@ -814,6 +817,7 @@ For the log \`1 1 1 2 2 3 4 4\` and \`k = 2\` the play counts are 1:3, 2:2, 4:2,
     slug: 'tree-diameter',
     title: 'Longest Trail in the Network',
     difficulty: 'MEDIUM',
+    timeLimitMs: 2000,
     statement: statement(
       `A network of \`n\` computers is connected by \`n - 1\` cables so that there is exactly one route between any two computers (a **tree**). The **diameter** of the network is the number of cables on the **longest** route between two computers, where a route never visits the same computer twice.
 

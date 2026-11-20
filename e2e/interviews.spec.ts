@@ -18,8 +18,8 @@ test('the Interviews link sits in the nav with a drifting light and opens a comi
   await expect(nav.getByRole('link')).toHaveText([
     'DSA',
     'Programming',
-    'Leaderboard',
     'Interviews',
+    'Leaderboard',
   ]);
 
   const link = nav.getByRole('link', { name: 'Interviews' });

@@ -13,9 +13,9 @@ import type { ProblemDef } from '../src/seed/problems.js';
 vi.setConfig({ maxConcurrency: 3 });
 const exec = new DockerExecutor({ image: 'thegrave-judge:latest' });
 
-async function judge(p: ProblemDef, language: Language, code: string) {
+async function judge(p: ProblemDef, language: Language, code: string, headroom = 1) {
   return exec.run(language, withDriver(p.slug, language, code), buildTestCases(p), {
-    timeLimitMs: effectiveTimeLimitMs(p.timeLimitMs ?? 1000, language),
+    timeLimitMs: effectiveTimeLimitMs(p.timeLimitMs ?? 1000, language) * headroom,
     memoryLimitMb: 256,
   });
 }
@@ -117,7 +117,9 @@ describe('second batch: the Python driver parses and prints every shape', () => 
         const code = pythonAdapter(p);
         // a bare function, so the judge wraps it with the driver rather than running it as a program
         expect(withDriver(p.slug, 'python', code)).toContain('_grader_main()');
-        expect(failures(await judge(p, 'python', code))).toEqual([]);
+        // The adapter parses the input twice (the driver, then the reference), so it gets extra time:
+        // this checks that the parsed arguments and printed answer are right, not how fast Python is.
+        expect(failures(await judge(p, 'python', code, 3))).toEqual([]);
       });
   });
 });
