@@ -50,6 +50,9 @@ Every match is executed inside hardened, isolated Docker sandboxes with millisec
 * **Pedagogical Guardrails**: Delivers directional nudges and conceptual hints without revealing exact code or spoiling solutions.
 * **Fair Play**: AI hints are permanently disabled during active ranked and unrated duels.
 
+### 🧑‍💼 Interview Prep
+* **Repo-Based Interview Questions**: Paste a public GitHub repo and get 8-10 interview questions, each backed by real code citations linked to the exact commit. Runs on Groq, reusing the hint coach's `GROQ_API_KEY`.
+
 ### 🛡️ Sandboxing & Production Security
 * **Hermetic Docker Sandbox**: Code execution runs inside unprivileged, ephemeral containers with `--network none`, strict cgroup v2 memory limits (256 MB), CPU quotas, and dropped Linux capabilities.
 * **Authentication**: Argon2id password hashing, rotating JWT access tokens, refresh token family reuse detection, and email OTP verification via SMTP / Mailjet.
@@ -93,6 +96,7 @@ theGrave/
 │   │   ├── prisma/         # Prisma 7 schema & SQL migrations
 │   │   ├── src/battle/     # Match state machine, problem selector, timer queues
 │   │   ├── src/hints/      # Progressive AI hint engine (Anthropic, DeepSeek, Groq)
+│   │   ├── src/interviews/ # GitHub repo reader and Groq interview-question pipeline
 │   │   ├── src/judge/      # Docker sandboxed code runner & test harness drivers
 │   │   ├── src/matchmaking/# Redis Lua script matchmaking engine
 │   │   ├── src/rating/     # Glicko-2 rating update & decay workers

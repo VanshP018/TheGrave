@@ -23,11 +23,14 @@ Internet ──► Caddy (ports 80/443, automatic HTTPS) ──┬─► static 
                     problems, runs)                 pending sign-ups)     programming challenges)
 ```
 
+A second queue worker, `interviews`, reads redis the same way but only talks to GitHub and Groq (no sandboxes).
+
 | Service | What it does | Reachable from the internet? |
 |---|---|---|
 | `web` (Caddy) | HTTPS, security headers, serves the site, forwards `/api` and websockets | **Yes**, ports 80 and 443 |
 | `api` | The application server. Runs read-only, as a non-root user, with no capabilities | No |
 | `worker` | Runs submitted code inside locked-down throwaway containers | No |
+| `interviews` | Builds interview questions from public GitHub repos with Groq. Read-only, no capabilities, no Docker socket | No |
 | `postgres` | The database | No |
 | `redis` | Job queues, leaderboard, battle and sign-up state | No |
 | `migrate` | Applies database migrations once per release, then exits | No |
@@ -149,7 +152,10 @@ Then fill in the rest:
 | `MAIL_FROM` | `"TheGrave <no-reply@yourdomain.example>"`, a verified sender |
 | `ANTHROPIC_API_KEY` | optional, enables the hint coach |
 | `BOTS_ENABLED`, `BOT_MATCH_AFTER_MS` | optional. Practice bots fill in when few players are online: a player who has waited `BOT_MATCH_AFTER_MS` (default 6000, plus up to 3 s of jitter) with no human opponent is matched with the bot closest in rating. On by default; set `BOTS_ENABLED=false` to turn them off. The bot accounts are created by the seed (`db:seed:prod`) |
-| `DEEPSEEK_API_KEY`, `GROQ_API_KEY` | optional alternatives for the hint coach; with several keys set, `HINT_PROVIDER` (`anthropic`, `deepseek` or `groq`) picks one, else the first set wins in that order |
+| `DEEPSEEK_API_KEY`, `GROQ_API_KEY` | optional alternatives for the hint coach; with several keys set, `HINT_PROVIDER` (`anthropic`, `deepseek` or `groq`) picks one, else the first set wins in that order. `GROQ_API_KEY` also turns on Interviews, so no new secret is needed |
+| `GROQ_TIER` | `developer` (default) or `free`; must match your Groq plan. The free tier allows only about 5 analyses a day for the whole account and each takes minutes |
+| `GITHUB_TOKEN` | recommended for Interviews, no scopes needed. Without it GitHub allows 60 API calls an hour per IP (about 15 analyses); with it 5000 |
+| `INTERVIEW_GROQ_API_KEY`, `INTERVIEW_DAILY_BUDGET_USD`, `INTERVIEW_DAILY_LIMIT`, `INTERVIEW_QUEUE_MAX`, `INTERVIEW_CONCURRENCY` | all optional. A separate Groq key for Interviews (default: `GROQ_API_KEY`), the daily spend cap for all users (default 2 USD), analyses per user per day and queue length (defaults come from `GROQ_TIER`), parallel jobs (default 1) |
 
 Leave `SITE_ADDRESS` commented out. `.env.production` is ignored by git; never commit it.
 
@@ -325,6 +331,10 @@ Left for you:
 | Registration says OK but no email arrives | `dc logs api` for a mail error. Check `SMTP_USER/PASS`, that `MAIL_FROM` is a verified sender, and the spam folder. New provider accounts often hold their first messages for review. |
 | Terminal and submissions hang on "Queued" | The worker is down or cannot reach Docker: `dc logs worker`, and check the sandbox images exist (`docker images | grep thegrave`; if not, `dc --profile images build`). |
 | Everyone gets "Too many requests" | The proxy setting is wrong, so all users share one IP. `TRUST_PROXY=1` must be set (it is, in `docker-compose.prod.yml`). |
+| Interviews say "not set up" | No `GROQ_API_KEY` (or `INTERVIEW_GROQ_API_KEY`). Add one and `dc up -d interviews api`. |
+| Interviews say Groq has reached its limit for today | Groq's daily limit or `INTERVIEW_DAILY_BUDGET_USD` is used up. Wait, raise the cap or upgrade the Groq plan. |
+| Interviews fail with "GitHub is rate-limiting" | Set `GITHUB_TOKEN`. |
+| `docker compose logs interviews` shows `budget_misconfigured` or 413 errors | `GROQ_TIER` does not match your Groq account. |
 | Hint coach says "not set up" | No `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY` or `GROQ_API_KEY`. Add one and `dc up -d`. |
 | Logged out on every reload | The site is being opened over plain `http://` or a different domain than `DOMAIN`. |
 

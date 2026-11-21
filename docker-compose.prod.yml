@@ -34,6 +34,18 @@ x-app-env: &app-env
   GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
   HINT_PROVIDER: ${HINT_PROVIDER:-}
   HINT_WORKSPACE_CAP: ${HINT_WORKSPACE_CAP:-122880}
+  # Interview prep (reuses GROQ_API_KEY above; INTERVIEW_GROQ_API_KEY is an optional override).
+  INTERVIEW_GROQ_API_KEY: ${INTERVIEW_GROQ_API_KEY:-}
+  GROQ_TIER: ${GROQ_TIER:-developer}
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+  INTERVIEW_MODEL: ${INTERVIEW_MODEL:-openai/gpt-oss-120b}
+  INTERVIEW_TRIAGE_MODEL: ${INTERVIEW_TRIAGE_MODEL:-openai/gpt-oss-20b}
+  INTERVIEW_CRITIQUE_MODEL: ${INTERVIEW_CRITIQUE_MODEL:-openai/gpt-oss-20b}
+  INTERVIEW_CONCURRENCY: ${INTERVIEW_CONCURRENCY:-1}
+  INTERVIEW_DAILY_BUDGET_USD: ${INTERVIEW_DAILY_BUDGET_USD:-2}
+  INTERVIEW_MAX_REPO_MB: ${INTERVIEW_MAX_REPO_MB:-500}
+  INTERVIEW_DAILY_LIMIT: ${INTERVIEW_DAILY_LIMIT:-}
+  INTERVIEW_QUEUE_MAX: ${INTERVIEW_QUEUE_MAX:-}
 
 services:
   postgres:
@@ -103,6 +115,23 @@ services:
       redis: { condition: service_healthy }
     volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
     security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  # Interview prep jobs: fetches public GitHub repos as text and calls Groq. No Docker socket, read-only.
+  interviews:
+    build: { context: ., dockerfile: deploy/Dockerfile.server, target: api }
+    image: thegrave-api:latest
+    command: ["node", "dist/interview-worker.js"]
+    restart: unless-stopped
+    environment: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck: { disable: true } # the api image's HEALTHCHECK probes :4000
     logging: *logging
 
   web:
