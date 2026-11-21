@@ -7,14 +7,16 @@ import {
   type RoomPlayer,
   type RoomView,
 } from '@thegrave/shared';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { getSocket } from '../../lib/socket';
 import { useAuth } from '../../stores/auth';
 import { useLobby } from '../../stores/lobby';
 import { useRoom } from '../../stores/room';
+import { Avatar } from '../Avatar';
 import { CheckIcon, CopyIcon } from '../battle/icons';
 import { btnPrimary, btnSecondary, focusRing } from '../ui';
+import { ModeCard } from './ModeCard';
 import { LinkIcon, UsersIcon } from './icons';
 
 type Emit = (...args: unknown[]) => void;
@@ -29,9 +31,6 @@ const DIFFICULTIES: { id: RoomDifficulty; label: string; tone: string }[] = [
   { id: 'HARD', label: 'Hard', tone: 'text-red-400' },
 ];
 
-const shell =
-  'relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#131313] to-[#0b0b0b] shadow-[0_24px_60px_-30px_rgb(0_0_0),inset_0_1px_0_rgb(255_255_255/0.05)]';
-
 function CopyButton({ text, label, icon }: { text: string; label: string; icon: 'code' | 'link' }) {
   const [done, setDone] = useState(false);
   return (
@@ -43,7 +42,7 @@ function CopyButton({ text, label, icon }: { text: string; label: string; icon: 
           setTimeout(() => setDone(false), 1400);
         })
       }
-      className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-md bg-white/[0.05] px-3 text-xs font-medium text-ink transition-colors hover:bg-white/[0.09] ${focusRing}`}
+      className={`inline-flex h-7 cursor-pointer items-center gap-2 rounded-md bg-white/[0.05] px-3 text-xs font-medium text-ink transition-colors hover:bg-white/[0.09] ${focusRing}`}
     >
       {done ? (
         <CheckIcon className="h-3.5 w-3.5 text-emerald-400" />
@@ -57,58 +56,60 @@ function CopyButton({ text, label, icon }: { text: string; label: string; icon: 
   );
 }
 
+/** A seat as just an avatar: ringed azure when ready, dashed and empty while waiting for a friend. */
 function Seat({
   player,
   role,
-  status,
+  ready,
   you,
+  green,
 }: {
   player: RoomPlayer | null;
   role: 'Host' | 'Guest';
-  status?: { text: string; tone: string };
+  ready?: boolean;
   you: boolean;
+  green: boolean;
 }) {
+  const label = player
+    ? `${role}: ${player.username}${you ? ' (you)' : ''}${ready ? ', ready' : ''}`
+    : `${role}: waiting for a friend`;
   return (
-    <div
-      className={`flex min-h-16 items-center gap-3 rounded-xl px-4 py-3 ${
-        player
-          ? 'bg-white/[0.04]'
-          : 'bg-white/[0.02] outline-1 -outline-offset-1 outline-dashed outline-ash-700'
-      }`}
-    >
-      <span
-        className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold ${
-          player ? 'bg-azure/15 text-azure' : 'bg-white/[0.03] text-ash-600'
-        }`}
-        aria-hidden
-      >
-        {player ? player.username[0]!.toUpperCase() : '?'}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-ash-400">
-          {role}
-          {you && ' · you'}
-        </p>
-        {player ? (
-          <p className="truncate text-sm text-ink">
-            {player.username} <span className="font-mono text-ash-400">{player.rating}</span>
-          </p>
-        ) : (
-          <p className="flex items-center gap-2 text-sm text-ash-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-azure motion-safe:animate-pulse" />
-            Waiting for a friend…
-          </p>
-        )}
-      </div>
-      {status && (
-        <span className={`shrink-0 text-xs font-medium ${status.tone}`}>{status.text}</span>
+    <span className="relative" title={label} role="img" aria-label={label}>
+      {player ? (
+        <Avatar
+          username={player.username}
+          url={player.avatarUrl}
+          size={44}
+          glow={you}
+          tone={green ? 'emerald' : 'azure'}
+        />
+      ) : (
+        <span className="grid h-11 w-11 place-items-center rounded-full bg-black/20 text-ash-400 outline-1 -outline-offset-1 outline-dashed outline-white/30 motion-safe:animate-pulse">
+          ?
+        </span>
       )}
-    </div>
+      {ready && (
+        <span
+          aria-hidden
+          className="absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-emerald-400 text-[#0a0a0a] ring-2 ring-[#10161c]"
+        >
+          <CheckIcon className="h-2.5 w-2.5" />
+        </span>
+      )}
+    </span>
   );
 }
 
-/** Inside a room: the code to share, both seats, the host's settings and the start. */
+/** The primary action, in the card's own accent: azure for DSA rooms, emerald for debugging rooms. */
+const primary = (green: boolean) =>
+  green ? '!bg-emerald-400 !text-[#06140e] shadow-[0_0_32px_-10px_rgb(52_211_153/0.6)]' : '';
+
+const pick =
+  'h-8 cursor-pointer rounded-md bg-black/25 px-2 text-xs text-ink ring-1 ring-inset ring-white/15 disabled:cursor-default disabled:opacity-60';
+
+/** Inside a room: the code to share, both avatars, the host's settings and the start, all in one card. */
 function Room({ room }: { room: RoomView }) {
+  const green = room.mode === 'PROGRAMMING';
   const me = useAuth((s) => s.user?.id);
   const isHost = room.host.id === me;
   const [error, setError] = useState<string | null>(null);
@@ -124,105 +125,60 @@ function Room({ room }: { room: RoomView }) {
   };
 
   return (
-    <section aria-label="Private room" className={shell}>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_45%_120%_at_0%_50%,rgb(92_184_255/0.12),transparent_70%)]"
-      />
-      <div className="relative grid gap-6 p-5 md:grid-cols-[auto_1fr] md:gap-10 md:p-6">
-        {/* The code, big enough to read out loud. */}
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-ash-400">
-            Room code
-          </p>
-          <p
-            className="mt-1 font-mono text-4xl font-semibold tracking-[0.25em] text-ink"
-            data-testid="room-code"
-          >
-            {room.code}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <CopyButton text={room.code} label="Copy code" icon="code" />
-            <CopyButton text={invite} label="Copy invite link" icon="link" />
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Seat player={room.host} role="Host" you={isHost} />
-            <Seat
-              player={room.guest}
-              role="Guest"
-              you={!isHost}
-              status={
-                room.guest
-                  ? room.guestReady
-                    ? { text: 'Ready', tone: 'text-emerald-400' }
-                    : { text: 'Not ready', tone: 'text-ash-400' }
-                  : undefined
-              }
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-ash-400">
-                Battle {!isHost && '(host picks)'}
-              </p>
-              <div
-                className="mt-1.5 flex rounded-full bg-white/[0.05] p-1"
-                role="group"
-                aria-label="Room mode"
+    <ModeCard
+      tone={green ? 'forest' : 'graphite'}
+      art={green ? 'pair' : 'rooms'}
+      pill={
+        <>
+          <UsersIcon className="h-4 w-4" />
+          {green ? 'Debugging room' : 'DSA room'}
+        </>
+      }
+      tag="Friendly · unrated"
+      title="Room"
+      subtitle=""
+      body={
+        <div aria-label="Private room" role="region" className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p
+                className="font-mono text-3xl font-semibold leading-none tracking-[0.2em] text-ink"
+                data-testid="room-code"
               >
-                {(
-                  [
-                    ['DSA', 'DSA'],
-                    ['PROGRAMMING', 'Programming'],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    onClick={() => void act('room:update', { mode: id })}
-                    disabled={!isHost || busy}
-                    aria-pressed={room.mode === id}
-                    className={`h-8 rounded-full px-3 text-xs font-medium transition-colors enabled:cursor-pointer disabled:cursor-default ${focusRing} ${
-                      room.mode === id
-                        ? 'bg-white/[0.1] text-azure'
-                        : 'text-ash-400 enabled:hover:text-ink'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+                {room.code}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <CopyButton text={room.code} label="Copy code" icon="code" />
+                <CopyButton text={invite} label="Copy link" icon="link" />
               </div>
             </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-ash-400">
-                Difficulty {!isHost && '(host picks)'}
-              </p>
-              <div
-                className="mt-1.5 flex rounded-full bg-white/[0.05] p-1"
-                role="group"
-                aria-label="Room difficulty"
-              >
-                {DIFFICULTIES.map((d) => (
-                  <button
-                    key={d.id}
-                    onClick={() => void act('room:update', { difficulty: d.id })}
-                    disabled={!isHost || busy}
-                    aria-pressed={room.difficulty === d.id}
-                    className={`h-8 rounded-full px-3 text-xs font-medium transition-colors enabled:cursor-pointer disabled:cursor-default ${focusRing} ${
-                      room.difficulty === d.id
-                        ? `bg-white/[0.1] ${d.tone}`
-                        : 'text-ash-400 enabled:hover:text-ink'
-                    }`}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
+            <div className="flex shrink-0 -space-x-2">
+              <Seat player={room.host} role="Host" you={isHost} green={green} />
+              <Seat
+                player={room.guest}
+                role="Guest"
+                you={!isHost}
+                ready={room.guestReady}
+                green={green}
+              />
             </div>
-            <p className="text-xs text-ash-400">Friendly match · unrated</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Room difficulty"
+              value={room.difficulty}
+              onChange={(e) => void act('room:update', { difficulty: e.target.value })}
+              disabled={!isHost || busy}
+              className={`${pick} ${focusRing}`}
+            >
+              {DIFFICULTIES.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+            {!isHost && <span className="text-xs text-ash-400">Host picks</span>}
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -230,7 +186,7 @@ function Room({ room }: { room: RoomView }) {
               <button
                 onClick={() => void act('room:start')}
                 disabled={busy || !room.guest || !room.guestReady}
-                className={`${btnPrimary} min-h-11 rounded-md px-6`}
+                className={`${btnPrimary} min-h-10 rounded-md px-5 ${primary(green)}`}
               >
                 Start battle
               </button>
@@ -238,7 +194,7 @@ function Room({ room }: { room: RoomView }) {
               <button
                 onClick={() => void act('room:update', { ready: !room.guestReady })}
                 disabled={busy}
-                className={`${room.guestReady ? btnSecondary : btnPrimary} min-h-11 rounded-md px-6`}
+                className={`${room.guestReady ? btnSecondary : `${btnPrimary} ${primary(green)}`} min-h-10 rounded-md px-5`}
               >
                 {room.guestReady ? 'Not ready' : 'Ready'}
               </button>
@@ -247,7 +203,7 @@ function Room({ room }: { room: RoomView }) {
               <button
                 onClick={() => void act('room:update', { kick: true })}
                 disabled={busy}
-                className={`${btnSecondary} min-h-11 rounded-md`}
+                className={`${btnSecondary} min-h-10 rounded-md`}
               >
                 Remove guest
               </button>
@@ -255,7 +211,7 @@ function Room({ room }: { room: RoomView }) {
             <button
               onClick={() => void act('room:leave')}
               disabled={busy}
-              className={`${btnSecondary} min-h-11 rounded-md`}
+              className={`${btnSecondary} min-h-10 rounded-md`}
             >
               {isHost ? 'Close room' : 'Leave room'}
             </button>
@@ -271,8 +227,8 @@ function Room({ room }: { room: RoomView }) {
             </p>
           )}
         </div>
-      </div>
-    </section>
+      }
+    />
   );
 }
 
@@ -280,7 +236,14 @@ function Room({ room }: { room: RoomView }) {
  * Private rooms (decision.md D-065), next to ranked matchmaking: create a room and share its code or
  * link, or join a friend's. `?room=CODE` in the URL joins straight away, which is what invite links do.
  */
-export function RoomPanel({ defaultMode = 'DSA' }: { defaultMode?: MatchMode }) {
+export function RoomPanel({
+  defaultMode = 'DSA',
+  lead,
+}: {
+  defaultMode?: MatchMode;
+  /** The ranked "Find match" card: it sits beside Create room (and stays, disabled, in a room). */
+  lead?: ReactNode;
+}) {
   const room = useRoom((s) => s.room);
   const notice = useRoom((s) => s.notice);
   const connected = useLobby((s) => s.connected);
@@ -316,7 +279,13 @@ export function RoomPanel({ defaultMode = 'DSA' }: { defaultMode?: MatchMode }) 
     );
   }, [invite, connected, setParams]);
 
-  if (room) return <Room room={room} />;
+  if (room)
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        {lead}
+        <Room room={room} />
+      </div>
+    );
 
   const create = async () => {
     setBusy(true);
@@ -332,55 +301,53 @@ export function RoomPanel({ defaultMode = 'DSA' }: { defaultMode?: MatchMode }) 
   const disabled = !connected || busy || queued;
 
   return (
-    <section aria-label="Private room" className={shell}>
-      <div className="relative flex flex-col gap-5 p-5 md:flex-row md:items-center md:gap-8 md:px-6">
-        <div className="flex flex-1 items-center gap-4">
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-azure/10 text-azure">
-            <UsersIcon className="h-5 w-5" />
-          </span>
-          <div>
-            <p className="text-sm font-semibold text-ink">Private room</p>
-            <p className="text-xs text-ash-400">
-              Challenge a friend with a code to a{' '}
-              {defaultMode === 'DSA' ? 'DSA problem' : 'debugging race'}. Friendly matches don’t
-              change ratings.
-            </p>
-          </div>
-        </div>
-        <form onSubmit={submit} className="flex gap-2">
-          <label className="sr-only" htmlFor="room-code">
-            Room code
-          </label>
-          <input
-            id="room-code"
-            value={code}
-            onChange={(e) => setCode(normalizeRoomCode(e.target.value).slice(0, ROOM_CODE_LENGTH))}
-            placeholder="ENTER CODE"
-            autoComplete="off"
-            spellCheck={false}
-            className={`h-11 w-36 rounded-md bg-white/[0.05] px-3 text-center font-mono text-sm uppercase tracking-[0.25em] text-ink placeholder:tracking-[0.15em] placeholder:text-ash-600 ${focusRing}`}
-          />
-          <button
-            type="submit"
-            disabled={disabled || normalizeRoomCode(code).length !== ROOM_CODE_LENGTH}
-            className={`${btnSecondary} min-h-11 rounded-md`}
-          >
-            Join
-          </button>
-        </form>
-        <button
-          onClick={() => void create()}
-          disabled={disabled}
-          className={`${btnSecondary} min-h-11 rounded-md md:w-40`}
-        >
-          Create room
-        </button>
-      </div>
+    <div className="grid gap-4 md:grid-cols-2">
+      {lead}
+      <ModeCard
+        tone={defaultMode === 'DSA' ? 'graphite' : 'forest'}
+        art={defaultMode === 'DSA' ? 'rooms' : 'pair'}
+        pill={
+          <>
+            <UsersIcon className="h-4 w-4" />
+            Friends
+          </>
+        }
+        tag="Friendly · unrated"
+        title="Create room"
+        subtitle={`Challenge a friend to a ${defaultMode === 'DSA' ? 'DSA problem' : 'debugging race'}`}
+        onClick={() => void create()}
+        disabled={disabled}
+        footer={
+          <form onSubmit={submit} className="flex max-w-sm gap-2">
+            <label className="sr-only" htmlFor="room-code">
+              Room code
+            </label>
+            <input
+              id="room-code"
+              value={code}
+              onChange={(e) =>
+                setCode(normalizeRoomCode(e.target.value).slice(0, ROOM_CODE_LENGTH))
+              }
+              placeholder="HAVE A CODE?"
+              autoComplete="off"
+              spellCheck={false}
+              className={`h-10 min-w-0 flex-1 rounded-md bg-black/30 px-3 text-center font-mono text-sm uppercase tracking-[0.25em] text-ink ring-1 ring-inset ring-white/15 placeholder:tracking-[0.15em] placeholder:text-ash-400 ${focusRing}`}
+            />
+            <button
+              type="submit"
+              disabled={disabled || normalizeRoomCode(code).length !== ROOM_CODE_LENGTH}
+              className={`${btnSecondary} min-h-10 rounded-md bg-black/20`}
+            >
+              Join
+            </button>
+          </form>
+        }
+      />
       {(error || notice || queued) && (
-        <p className="relative px-5 pb-4 text-sm text-ash-300 md:px-6" role="status">
+        <p className="text-sm text-ash-300 md:col-span-2" role="status">
           {error ?? notice ?? 'Leave the ranked queue to use a private room.'}
         </p>
       )}
-    </section>
+    </div>
   );
 }

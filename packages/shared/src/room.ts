@@ -8,6 +8,7 @@ export interface RoomPlayer {
   id: string;
   username: string;
   rating: number;
+  avatarUrl: string | null;
 }
 
 export interface RoomView {

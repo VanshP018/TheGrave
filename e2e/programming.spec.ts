@@ -90,7 +90,7 @@ test('ranked programming battle: same codebase, first full pass wins', async ({ 
     const page = await (await browser.newContext()).newPage();
     const username = `${name}${Date.now() % 100000}`;
     await registerViaUi(page, username);
-    await expect(page.getByText('Connected')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Find match' })).toBeEnabled();
     await page.getByRole('link', { name: 'Programming', exact: true }).click();
     await expect(page.getByText('Ranked debugging')).toBeVisible();
     players.push(page);

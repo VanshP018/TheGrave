@@ -1,5 +1,5 @@
 import { AppShell } from '../components/AppShell';
-import { Lobby } from '../components/Lobby';
+import { FindMatchCard, Lobby } from '../components/Lobby';
 import { RoomPanel } from '../components/play/RoomPanel';
 import { ProjectPracticeList } from '../components/project/ProjectPracticeList';
 import { useRoom } from '../stores/room';
@@ -34,7 +34,7 @@ export function ProjectsPage() {
               : 'Both players get the same buggy codebase · first to pass every hidden test wins · When few players are online you may be matched with a practice bot'}
           </p>
           <div className="mt-4">
-            <RoomPanel defaultMode="PROGRAMMING" />
+            <RoomPanel defaultMode="PROGRAMMING" lead={<FindMatchCard mode="PROGRAMMING" />} />
           </div>
         </div>
 

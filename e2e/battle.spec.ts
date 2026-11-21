@@ -24,7 +24,7 @@ async function player(browser: Browser, name: string): Promise<Page> {
   const username = `${name}${Date.now() % 100000}${seq++}`;
   await registerViaUi(page, username);
   await expect(page.getByRole('heading', { name: `Welcome, ${username}` })).toBeVisible();
-  await expect(page.getByText('Connected')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Find match' })).toBeEnabled();
   return page;
 }
 

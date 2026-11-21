@@ -19,7 +19,7 @@ async function player(browser: Browser, name: string): Promise<Page> {
   const username = `${name}${Date.now() % 100000}${seq++}`;
   await registerViaUi(page, username);
   await expect(page.getByRole('heading', { name: `Welcome, ${username}` })).toBeVisible();
-  await expect(page.getByText('Connected')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Find match' })).toBeEnabled();
   return page;
 }
 
@@ -38,9 +38,9 @@ test('private room: invite link → ready → host starts a friendly, unrated ba
 
   await guest.goto(`/play?room=${code}`);
   await expect(guest.getByTestId('room-code')).toHaveText(code);
-  await expect(host.getByText(/Not ready/)).toBeVisible();
+  await expect(host.getByRole('img', { name: /^Guest: guest\w+$/ })).toBeVisible();
   await guest.getByRole('button', { name: 'Ready', exact: true }).click();
-  await expect(host.getByText('Ready', { exact: true })).toBeVisible();
+  await expect(host.getByRole('img', { name: /^Guest: .*, ready$/ })).toBeVisible();
 
   await host.getByRole('button', { name: 'Start battle' }).click();
   for (const p of [host, guest]) {

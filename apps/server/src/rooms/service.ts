@@ -14,6 +14,7 @@ import {
 } from '@thegrave/shared';
 import type { Redis } from 'ioredis';
 import type { BattleNotifier, BattleService } from '../battle/service.js';
+import { avatarUrl } from '../lib/avatar.js';
 import { prisma } from '../lib/prisma.js';
 import type { Matchmaker } from '../matchmaking/matchmaker.js';
 import { roomScripts } from './scripts.js';
@@ -223,8 +224,18 @@ export class RoomService {
   private async players(ids: string[]): Promise<Map<string, RoomPlayer>> {
     const users = await prisma.user.findMany({
       where: { id: { in: ids } },
-      select: { id: true, username: true, rating: true },
+      select: { id: true, username: true, rating: true, avatarUpdatedAt: true },
     });
-    return new Map(users.map((u) => [u.id, { ...u, rating: Math.round(u.rating) }]));
+    return new Map(
+      users.map((u) => [
+        u.id,
+        {
+          id: u.id,
+          username: u.username,
+          rating: Math.round(u.rating),
+          avatarUrl: avatarUrl(u),
+        },
+      ]),
+    );
   }
 }

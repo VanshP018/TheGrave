@@ -1,11 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import type { PublicUser } from '@thegrave/shared';
-import { Link } from 'react-router';
 import { AppShell } from '../components/AppShell';
-import { Lobby } from '../components/Lobby';
+import { FindMatchCard, Lobby } from '../components/Lobby';
 import { PracticeList } from '../components/play/PracticeList';
 import { RoomPanel } from '../components/play/RoomPanel';
-import { focusRing } from '../components/ui';
 import { api } from '../lib/api';
 import { usePreferredLanguage } from '../lib/preferences';
 import { useRoom } from '../stores/room';
@@ -28,25 +26,9 @@ export function HomePage() {
               {`Welcome, ${me?.username ?? '…'}`}
             </h1>
           </div>
-          <div className="flex items-center gap-6 text-sm">
-            <div className="text-right">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-ash-400">
-                Rating
-              </p>
-              <p className="font-mono text-2xl font-semibold text-azure">{me?.rating ?? '—'}</p>
-            </div>
-            {me && (
-              <Link
-                to={`/u/${me.username}`}
-                className={`rounded-md bg-white/[0.05] px-4 py-2 text-ash-300 transition-colors hover:bg-white/[0.09] hover:text-ink ${focusRing}`}
-              >
-                View profile
-              </Link>
-            )}
-          </div>
         </div>
 
-        <Lobby language={language} onLanguage={setLanguage} />
+        <Lobby />
         <p className="mt-3 text-xs text-ash-400">
           {inRoom
             ? 'You’re in a private room: leave or close it to queue for ranked.'
@@ -54,7 +36,7 @@ export function HomePage() {
         </p>
 
         <div className="mt-4">
-          <RoomPanel />
+          <RoomPanel lead={<FindMatchCard language={language} onLanguage={setLanguage} />} />
         </div>
 
         <PracticeList />
