@@ -25,3 +25,7 @@ export const navLink = (active = false) =>
       ? 'text-ink after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-azure'
       : 'text-ash-300 hover:text-ink'
   }`;
+
+/** The Interviews link shimmers as a "new" highlight until this date (about two weeks after launch), then plainly. */
+const INTERVIEWS_NEW_UNTIL = Date.parse('2026-12-08T00:00:00Z');
+export const interviewsIsNew = (now = Date.now()) => now < INTERVIEWS_NEW_UNTIL;

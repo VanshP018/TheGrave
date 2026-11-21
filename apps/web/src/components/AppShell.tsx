@@ -4,7 +4,7 @@ import { authApi } from '../lib/api';
 import { useAuth } from '../stores/auth';
 import { Avatar } from './Avatar';
 import { UserSearch } from './UserSearch';
-import { NAV_ACTIONS, NAV_BRAND, NAV_LINKS, NAV_ROW, navLink } from './nav';
+import { interviewsIsNew, NAV_ACTIONS, NAV_BRAND, NAV_LINKS, NAV_ROW, navLink } from './nav';
 import { focusRing, GlowBackdrop, Wordmark } from './ui';
 
 /** Header + nav for the signed-in pages (the battle screen has its own header). */
@@ -35,10 +35,12 @@ export function AppShell({ children }: { children: ReactNode; wide?: boolean }) 
             <NavLink to="/projects" className={({ isActive }) => navLink(isActive)}>
               Programming
             </NavLink>
-            {/* Not built yet: the label carries a drifting light, and the page says "coming soon". */}
+            {/* New: the label carries a drifting light for a couple of weeks after launch (nav.ts). */}
             <NavLink
               to="/interviews"
-              className={({ isActive }) => `${navLink(isActive)} ${isActive ? '' : 'nav-wave'}`}
+              className={({ isActive }) =>
+                `${navLink(isActive)} ${isActive || !interviewsIsNew() ? '' : 'nav-wave'}`
+              }
             >
               Interviews
             </NavLink>

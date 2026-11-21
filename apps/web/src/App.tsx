@@ -17,6 +17,7 @@ import { RegisterPage } from './pages/RegisterPage';
 
 // Monaco is large: only load it when a battle opens.
 const BattlePage = lazy(() => import('./pages/BattlePage'));
+const InterviewDetailPage = lazy(() => import('./pages/InterviewDetailPage'));
 const PracticePage = lazy(() => import('./pages/PracticePage'));
 const ProjectPage = lazy(() => import('./pages/ProjectPage'));
 // framer-motion stays out of the app bundle for signed-in pages.
@@ -57,6 +58,14 @@ export default function App() {
         />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/interviews" element={<InterviewsPage />} />
+        <Route
+          path="/interviews/:id"
+          element={
+            <Suspense fallback={<FullScreenMessage>Loading analysis…</FullScreenMessage>}>
+              <InterviewDetailPage />
+            </Suspense>
+          }
+        />
         <Route path="/u/:username" element={<ProfilePage />} />
         <Route
           path="/practice/:slug"
