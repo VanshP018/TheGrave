@@ -31,7 +31,7 @@ export function ProjectsPage() {
           <p className="mt-3 text-xs text-ash-400">
             {inRoom
               ? 'You’re in a private room: leave or close it to queue for ranked.'
-              : 'Both players get the same buggy codebase · first to pass every hidden test wins'}
+              : 'Both players get the same buggy codebase · first to pass every hidden test wins · When few players are online you may be matched with a practice bot'}
           </p>
           <div className="mt-4">
             <RoomPanel defaultMode="PROGRAMMING" />

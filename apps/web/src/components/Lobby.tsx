@@ -9,7 +9,7 @@ import { useRoom } from '../stores/room';
 import { LANGUAGE_LABEL } from './battle/ProblemPanel';
 import { ChevronIcon } from './battle/icons';
 import { BoltIcon } from './play/icons';
-import { BotBadge, btnPrimary, btnSecondary, focusRing } from './ui';
+import { btnPrimary, btnSecondary, focusRing } from './ui';
 
 const emitAck = <T extends object>(fn: (ack: (r: Ack<T>) => void) => void) =>
   new Promise<Ack<T>>((resolve) => fn(resolve));
@@ -160,7 +160,6 @@ export function Lobby({
           <div className="flex-1">
             <p className="text-lg text-ink">
               Match found: <span className="font-semibold">{match.opponent.username}</span>{' '}
-              {match.opponent.bot && <BotBadge className="mr-1" />}
               <span className="font-mono text-azure">({match.opponent.rating})</span>
             </p>
             <p className="mt-0.5 text-sm text-ash-300">

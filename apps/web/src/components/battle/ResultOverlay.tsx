@@ -1,6 +1,6 @@
 import type { MatchResult, PlayerProgress } from '@thegrave/shared';
 import { Link } from 'react-router';
-import { BotBadge, btnPrimary } from '../ui';
+import { btnPrimary } from '../ui';
 
 const REASON: Record<MatchResult['endReason'], string> = {
   SOLVED: 'first to solve every test',
@@ -66,8 +66,7 @@ export function ResultOverlay({
           {headline}
         </p>
         <p className="relative mt-2 text-sm text-ash-300" data-testid="battle-result-reason">
-          vs {opponent.username}
-          {opponent.bot && <BotBadge className="mx-1.5" />}: {reason}
+          vs {opponent.username}: {reason}
         </p>
         {(() => {
           const mine = result.ratingChanges?.find((c) => c.userId === me);

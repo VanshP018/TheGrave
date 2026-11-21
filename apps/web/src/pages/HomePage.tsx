@@ -50,7 +50,7 @@ export function HomePage() {
         <p className="mt-3 text-xs text-ash-400">
           {inRoom
             ? 'You’re in a private room: leave or close it to queue for ranked.'
-            : 'First fully accepted solution wins · ratings update the moment the match ends'}
+            : 'First fully accepted solution wins · ratings update the moment the match ends · When few players are online you may be matched with a practice bot'}
         </p>
 
         <div className="mt-4">

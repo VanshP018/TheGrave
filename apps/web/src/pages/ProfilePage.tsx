@@ -409,7 +409,6 @@ export function ProfilePage() {
                   <Link to={`/u/${m.opponent.username}`} className="hover:text-azure">
                     {m.opponent.username}
                   </Link>{' '}
-                  {m.opponent.bot && <BotBadge className="mr-1" />}
                   <span className="text-ash-400">({m.opponent.rating})</span>
                 </span>
                 <span className="hidden min-w-0 truncate text-ash-400 md:block md:w-56">

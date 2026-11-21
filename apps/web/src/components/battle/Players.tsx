@@ -1,6 +1,5 @@
 import type { BattleView, PlayerProgress } from '@thegrave/shared';
 import { Avatar } from '../Avatar';
-import { BotBadge } from '../ui';
 import { clock } from './format';
 import { SectionTitle } from './Statement';
 
@@ -26,7 +25,6 @@ export function PlayerChip(props: {
     >
       <span className="sr-only">
         {me ? 'You' : 'Opponent'}: {p.username}
-        {p.bot ? ' (practice bot)' : ''}
       </span>
       <span className="relative shrink-0">
         <Avatar username={p.username} url={p.avatarUrl} size={36} glow={me} />
@@ -51,7 +49,6 @@ export function PlayerChip(props: {
           {p.bestPassed}/{total ?? '?'} tests
         </span>
       </div>
-      {p.bot && <BotBadge />}
       {!p.connected && (
         <span className="shrink-0 text-[11px] font-medium text-orange-400">
           away {p.graceEndsAt ? clock(p.graceEndsAt - now) : ''}
@@ -66,10 +63,7 @@ function PlayerDetail({ p, total, me }: { p: PlayerProgress; total: number | nul
   return (
     <div className={`rounded-md border p-4 ${me ? 'border-azure/30' : 'border-ash-700'}`}>
       <div className="flex items-baseline justify-between gap-2">
-        <p className="truncate font-semibold text-ink">
-          {p.username}
-          {p.bot && <BotBadge className="ml-2" />}
-        </p>
+        <p className="truncate font-semibold text-ink">{p.username}</p>
         <p className="font-mono text-sm text-ash-300">{p.rating}</p>
       </div>
       <p className="text-xs text-ash-400">{me ? 'You' : 'Opponent'}</p>
