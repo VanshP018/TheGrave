@@ -2,6 +2,7 @@ import type { Config } from '../config.js';
 import { redis } from '../lib/redis.js';
 import type { TierBudget } from './budget.js';
 import { FakeInterviewLlm } from './fake-llm.js';
+import { interviewGroqKey } from './enabled.js';
 import { GroqClient } from './groq-client.js';
 import { GroqInterviewLlm } from './groq-llm.js';
 import type { InterviewLlm, InterviewLogger } from './llm.js';
@@ -25,11 +26,14 @@ export function createInterviewLlm(
   log?: InterviewLogger,
 ): InterviewLlm | null {
   if (env.INTERVIEW_MODEL === 'fake') return new FakeInterviewLlm(budget);
-  const apiKey = env.INTERVIEW_GROQ_API_KEY ?? env.GROQ_API_KEY;
+  // Same key resolution as interviewsEnabled(): the override, else the hint coach's GROQ_API_KEY.
+  const apiKey = interviewGroqKey(env);
   if (!apiKey) return null;
   const client = new GroqClient({
     apiKey,
     baseUrl: env.GROQ_BASE_URL,
+    // The limiter keeps its own Redis keys (interviews:groq:*), but when this runs on the coach's GROQ_API_KEY the
+    // key's Groq-side limits (TPM/RPM/TPD per model) are shared with the hint coach, which does not use the limiter.
     limiter: new GroqLimiter(redis, {
       tpm: budget.tpmBudget,
       rpm: budget.rpmBudget,

@@ -11,12 +11,22 @@ import { redis } from './lib/redis.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { AuthError } from './modules/auth/service.js';
 import { problemRoutes } from './modules/problems/routes.js';
+import type { TierBudget } from './interviews/budget.js';
 import type { HintModel } from './hints/model.js';
+import { interviewRoutes } from './modules/interviews/routes.js';
 import { projectRoutes } from './modules/projects/routes.js';
 import { profileRoutes } from './modules/users/routes.js';
 import authenticate from './plugins/authenticate.js';
 
-export async function buildApp(opts: { hintModel?: HintModel | null } = {}) {
+export async function buildApp(
+  opts: {
+    hintModel?: HintModel | null;
+    /** Tests: force interview prep on/off. Default: on when a Groq key (or INTERVIEW_MODEL=fake) is configured. */
+    interviewsEnabled?: boolean;
+    /** Tests: override the tier budget (daily limit, queue cap). */
+    interviewBudget?: TierBudget;
+  } = {},
+) {
   const app = Fastify({
     // A hop count N means "trust the N nearest proxies": the client IP is the first address beyond them.
     trustProxy:
@@ -85,6 +95,11 @@ export async function buildApp(opts: { hintModel?: HintModel | null } = {}) {
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(problemRoutes, { prefix: '/api' });
   await app.register(projectRoutes, { prefix: '/api', hintModel: opts.hintModel });
+  await app.register(interviewRoutes, {
+    prefix: '/api',
+    enabled: opts.interviewsEnabled,
+    budget: opts.interviewBudget,
+  });
   await app.register(profileRoutes, { prefix: '/api' });
 
   return app;
