@@ -49,5 +49,7 @@ for (const def of projects) {
 }
 console.log(`seeded ${projects.length} projects`);
 const bots = await seedBots();
-console.log(`seeded ${bots.length} practice bots (${bots.filter((b) => b.created).length} new)`);
+console.log(
+  `seeded ${bots.length} practice bots (${bots.filter((b) => b.created).length} new, ${bots.filter((b) => b.renamed).length} renamed)`,
+);
 await prisma.$disconnect();

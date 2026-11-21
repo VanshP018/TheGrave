@@ -10,7 +10,7 @@ import {
   type PlayerProgress,
   type ServerToClientEvents,
 } from '@thegrave/shared';
-import { BOTS } from '../bots/roster.js';
+import { BOTS, traitsFor } from '../bots/roster.js';
 import { planBot } from '../bots/plan.js';
 import { enqueueSubmission } from '../judge/queue.js';
 import { avatarUrl } from '../lib/avatar.js';
@@ -163,6 +163,10 @@ export class BattleService {
   ) {
     const bots = users.filter((u) => u.isBot);
     if (!bots.length) return;
+    // The samples a player can see: every real attempt passes at least those.
+    const samples = subject.problem
+      ? await prisma.testCase.count({ where: { problemId: subject.problem.id, isSample: true } })
+      : 0;
     const totalTests = subject.problem
       ? await prisma.testCase.count({ where: { problemId: subject.problem.id } })
       : (
@@ -172,16 +176,14 @@ export class BattleService {
           })
         ).hiddenTestCount;
     for (const bot of bots) {
+      // A bot renamed by a name clash still plays by its rating: traits come from there if it isn't listed.
       const persona = BOTS.find((b) => b.username === bot.username);
       const plan = planBot({
-        bot: {
-          rating: bot.rating,
-          pace: persona?.pace ?? 1,
-          sloppiness: persona?.sloppiness ?? 0.3,
-        },
+        bot: { rating: bot.rating, ...(persona ?? traitsFor(bot.rating)) },
         difficulty,
         durationMs: this.opts.durationMs[difficulty],
         totalTests,
+        minPassed: samples,
         rng: Math.random,
       });
       for (const [seq, a] of plan.entries())

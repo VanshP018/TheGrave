@@ -185,7 +185,8 @@ describe('a lone player against a practice bot', () => {
 
     const v = await view(matchId, h);
     const botView = v.players.find((p) => p.userId === bot.id)!;
-    expect(botView).toMatchObject({ bot: true, solved: true, attempts: 3, connected: true });
+    expect(botView).toMatchObject({ bot: true, solved: true, connected: true });
+    expect(botView.attempts).toBeGreaterThanOrEqual(3); // wrong tries first, then the solve
     expect(v.players.find((p) => p.userId === h.id)!.bot).toBeUndefined();
 
     const botRow = await prisma.user.findUniqueOrThrow({ where: { id: bot.id } });

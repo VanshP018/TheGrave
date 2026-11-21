@@ -357,6 +357,9 @@ export class Matchmaker {
       const rating = await this.redis.zscore(this.keys[0]!, userId);
       if (rating === null) continue;
       const bots = await this.loadBots();
+      // Not the bots this player has just faced, if there are others nearly as close.
+      const recentKey = `mm:bot-recent:${userId}`;
+      const recent = new Set(await this.redis.lrange(recentKey, 0, 2));
       // The closest bot first; if it is busy in another match, the next closest.
       const tried = new Set<string>();
       for (let n = 0; n < 3; n++) {
@@ -364,6 +367,7 @@ export class Matchmaker {
           bots.filter((b) => !tried.has(b.id)),
           Number(rating),
           Math.random,
+          recent,
         );
         if (!bot) break;
         tried.add(bot.id);
@@ -374,6 +378,12 @@ export class Matchmaker {
         );
         if (!res.length) continue;
         const [matchId, , deadline] = res as [string, string, string];
+        await this.redis
+          .multi()
+          .lpush(recentKey, bot.id)
+          .ltrim(recentKey, 0, 2)
+          .expire(recentKey, 24 * 60 * 60)
+          .exec();
         this.notify.toUser(userId, 'match:found', {
           matchId,
           opponent: {

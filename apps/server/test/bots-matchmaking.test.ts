@@ -76,9 +76,8 @@ describe('matching with a practice bot', () => {
     await mm.tick();
     const f = found(a.id)!;
     expect(f.opponent.bot).toBe(true);
-    // the roster has 1500 and 1600 bots either side of 1530: it is one of those two, never a distant one
-    expect(['TreeTara', 'GraphGio']).toContain(f.opponent.username);
-    expect([1500, 1600]).toContain(f.opponent.rating);
+    // one of the few bots nearest 1530: never a distant one
+    expect(Math.abs(f.opponent.rating - 1530)).toBeLessThanOrEqual(120);
     expect(await redis.zscore('mm:queue', a.id)).toBeNull(); // out of the queue, in a ready check
     expect(await mm.describe(a.id)).toMatchObject({
       state: 'ready',
@@ -159,6 +158,22 @@ describe('matching with a practice bot', () => {
     expect(Math.abs(second.rating - 1500)).toBeLessThanOrEqual(250);
   });
 
+  it('does not hand the same bot straight back after a decline', async () => {
+    const a = await human('picky', 1500);
+    const { mm, found } = setup({ botAfterMs: 0 });
+    const seen: string[] = [];
+    for (let round = 0; round < 3; round++) {
+      await mm.join(a.id);
+      await sleep(20);
+      await mm.tick();
+      const f = found(a.id)!;
+      seen.push(f.opponent.id);
+      await mm.decline(f.matchId, a.id);
+    }
+    // each of the last three bots differs from the one before it, and from the one before that
+    expect(new Set(seen).size).toBe(3);
+  });
+
   it('works for the programming queue as well', async () => {
     const a = await human('coder', 1100);
     const { mm, found } = setup({ mode: 'PROGRAMMING', botAfterMs: 0 });
@@ -167,6 +182,6 @@ describe('matching with a practice bot', () => {
     await mm.tick();
     const { opponent } = found(a.id)!;
     expect(opponent.bot).toBe(true);
-    expect(Math.abs(opponent.rating - 1100)).toBeLessThanOrEqual(150); // the closest, or the runner-up
+    expect(Math.abs(opponent.rating - 1100)).toBeLessThanOrEqual(150); // one of the nearest
   });
 });

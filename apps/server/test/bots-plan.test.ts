@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pickBotFor, planBot, solveChance } from '../src/bots/plan.js';
-import { BOTS } from '../src/bots/roster.js';
+import { BOTS, traitsFor } from '../src/bots/roster.js';
 
 // Practice bots: how likely they are to solve something, how their battle is scripted, and which one a player gets.
 const seeded = (seed: number) => {
@@ -16,13 +16,63 @@ const seeded = (seed: number) => {
 const MIN = 60_000;
 
 describe('roster', () => {
-  it('is a ladder from beginner to expert with unique names', () => {
-    expect(BOTS.length).toBeGreaterThanOrEqual(10);
-    expect(new Set(BOTS.map((b) => b.username)).size).toBe(BOTS.length);
+  it('is a dense ladder from beginner to expert, with no big gaps', () => {
+    expect(BOTS.length).toBeGreaterThanOrEqual(35);
     const ratings = BOTS.map((b) => b.rating);
-    expect(Math.min(...ratings)).toBeLessThanOrEqual(900);
-    expect(Math.max(...ratings)).toBeGreaterThanOrEqual(2300);
     expect(ratings).toEqual([...ratings].sort((a, b) => a - b));
+    expect(Math.min(...ratings)).toBeLessThanOrEqual(750);
+    expect(Math.max(...ratings)).toBeGreaterThanOrEqual(2450);
+    for (let i = 1; i < ratings.length; i++)
+      expect(
+        ratings[i]! - ratings[i - 1]!,
+        `${ratings[i - 1]} -> ${ratings[i]}`,
+      ).toBeLessThanOrEqual(120);
+    // most players sit near 1500, so that is where the rungs are closest
+    const near = ratings.filter((r) => r >= 1300 && r <= 1700).length;
+    expect(near).toBeGreaterThanOrEqual(10);
+  });
+
+  it('has unique, valid usernames that read like a person chose them', () => {
+    const names = BOTS.map((b) => b.username);
+    expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(names.length);
+    for (const n of names) {
+      expect(n, n).toMatch(/^[a-zA-Z0-9_]{3,20}$/); // the same rule a player registers with
+      expect(n.toLowerCase(), n).not.toContain('bot');
+    }
+  });
+
+  it('keeps the first roster as legacy names, so those accounts are renamed rather than replaced', () => {
+    const legacy = BOTS.filter((b) => b.legacy).map((b) => b.legacy);
+    expect(legacy.sort()).toEqual(
+      [
+        'ArrayAnt',
+        'BitBea',
+        'DPDiya',
+        'FlowFinn',
+        'GraphGio',
+        'HeapHana',
+        'LoopLarry',
+        'NullNova',
+        'QueueQuinn',
+        'SegSasha',
+        'StackSam',
+        'TreeTara',
+      ].sort(),
+    );
+    const byLegacy = Object.fromEntries(
+      BOTS.filter((b) => b.legacy).map((b) => [b.legacy, b.rating]),
+    );
+    expect(byLegacy).toMatchObject({ ArrayAnt: 800, TreeTara: 1500, NullNova: 2350 }); // ratings unchanged
+  });
+
+  it('mixes playing styles, and stronger players are quicker and less sloppy', () => {
+    expect(new Set(BOTS.map((b) => b.style)).size).toBe(4);
+    expect(traitsFor(2400).pace).toBeLessThan(traitsFor(800).pace);
+    expect(traitsFor(2400).sloppiness).toBeLessThan(traitsFor(800).sloppiness);
+    expect(traitsFor(1500, 'speedy').pace).toBeLessThan(traitsFor(1500, 'careful').pace);
+    expect(traitsFor(1500, 'careful').sloppiness).toBeLessThan(
+      traitsFor(1500, 'speedy').sloppiness,
+    );
   });
 });
 
@@ -108,6 +158,80 @@ describe('planBot', () => {
   });
 });
 
+describe('planBot quality', () => {
+  const base = { difficulty: 'MEDIUM' as const, durationMs: 25 * MIN, totalTests: 10 };
+
+  it('wrong attempts creep upwards and always pass the sample tests', () => {
+    let withWrong = 0;
+    for (let seed = 1; seed <= 400; seed++) {
+      const plan = planBot({
+        ...base,
+        bot: { rating: 1700, pace: 1, sloppiness: 0.8, style: 'grinder' },
+        minPassed: 2,
+        rng: seeded(seed),
+      });
+      const passes = plan.map((a) => a.passed);
+      expect(passes).toEqual([...passes].sort((a, b) => a - b)); // never worse than the last try
+      for (const a of plan) expect(a.passed).toBeGreaterThanOrEqual(2);
+      if (plan.length > 1) withWrong++;
+    }
+    expect(withWrong).toBeGreaterThan(150); // a sloppy grinder usually gets a few wrong first
+  });
+
+  it('solve times vary like a person is', () => {
+    const times: number[] = [];
+    for (let seed = 1; seed <= 600; seed++) {
+      const full = planBot({
+        ...base,
+        bot: { rating: 1650, pace: 1, sloppiness: 0.2 },
+        rng: seeded(seed),
+      }).find((a) => a.passed === a.total);
+      if (full) times.push(full.atMs);
+    }
+    expect(times.length).toBeGreaterThan(200);
+    const mean = times.reduce((a, b) => a + b, 0) / times.length;
+    const sd = Math.sqrt(times.reduce((a, t) => a + (t - mean) ** 2, 0) / times.length);
+    expect(sd / mean).toBeGreaterThan(0.15); // not a fixed time with a little noise
+    expect(Math.min(...times)).toBeGreaterThanOrEqual(40_000); // nobody solves a Medium in seconds
+    expect(Math.max(...times)).toBeLessThanOrEqual(25 * MIN * 0.92);
+  });
+
+  it('styles behave differently: speedy bots submit sooner, grinders try more often', () => {
+    const avg = (
+      style: 'speedy' | 'careful' | 'grinder',
+      pick: (a: ReturnType<typeof planBot>) => number,
+    ) => {
+      let sum = 0;
+      for (let seed = 1; seed <= 500; seed++)
+        sum += pick(
+          planBot({
+            ...base,
+            bot: { ...traitsFor(1400, style), rating: 1400, style },
+            rng: seeded(seed),
+          }),
+        );
+      return sum / 500;
+    };
+    const firstAt = (a: ReturnType<typeof planBot>) => a[0]!.atMs;
+    expect(avg('speedy', firstAt)).toBeLessThan(avg('careful', firstAt));
+    const tries = (a: ReturnType<typeof planBot>) => a.length;
+    expect(avg('grinder', tries)).toBeGreaterThan(avg('careful', tries));
+  });
+
+  it('a good or a bad day moves the same bot around a little', () => {
+    const rates = new Set<number>();
+    for (let seed = 1; seed <= 60; seed++) {
+      const plan = planBot({
+        ...base,
+        bot: { rating: 1550, pace: 1, sloppiness: 0 },
+        rng: seeded(seed),
+      });
+      rates.add(plan.at(-1)!.atMs);
+    }
+    expect(rates.size).toBeGreaterThan(20);
+  });
+});
+
 describe('pickBotFor', () => {
   it('gives the closest bot, and never one far from the player', () => {
     for (const rating of [500, 900, 1500, 1730, 2000, 3000]) {
@@ -124,6 +248,23 @@ describe('pickBotFor', () => {
       picked.add(pickBotFor(BOTS, 1550, seeded(seed))!.username);
     expect(picked.size).toBeGreaterThanOrEqual(2);
     expect(picked.size).toBeLessThanOrEqual(3);
+  });
+  it('skips bots the player just faced when others are nearly as close', () => {
+    const bots = BOTS.map((b, i) => ({ ...b, id: `bot${i}` }));
+    for (const rating of [900, 1500, 1800, 2300]) {
+      for (let seed = 1; seed <= 100; seed++) {
+        const first = pickBotFor(bots, rating, seeded(seed))!;
+        const second = pickBotFor(bots, rating, seeded(seed), new Set([first.id]))!;
+        expect(second.id).not.toBe(first.id);
+        expect(Math.abs(second.rating - rating)).toBeLessThanOrEqual(
+          Math.min(...bots.map((b) => Math.abs(b.rating - rating))) + 150,
+        );
+      }
+    }
+  });
+  it('still returns a bot when every close one was avoided', () => {
+    const only = [{ id: 'a', rating: 1500 }];
+    expect(pickBotFor(only, 1500, Math.random, new Set(['a']))!.id).toBe('a');
   });
   it('returns null with no bots', () => {
     expect(pickBotFor([], 1500, Math.random)).toBeNull();
