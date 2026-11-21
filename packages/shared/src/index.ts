@@ -1,6 +1,7 @@
 export * from './activity.js';
 export * from './auth.js';
 export * from './battle.js';
+export * from './interview.js';
 export * from './judge.js';
 export * from './rating.js';
 export * from './profile.js';

@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+// Compose passes unset values as empty strings.
+const emptyToUndef = (v: unknown) => (v === '' ? undefined : v);
+const optionalInt = () =>
+  z.preprocess(emptyToUndef, z.coerce.number().int().nonnegative().optional());
+
 // Fail fast on boot if the environment is misconfigured.
 export const envSchema = z
   .object({
@@ -57,6 +62,30 @@ export const envSchema = z
     GROQ_API_KEY: z.string().optional(),
     GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
     GROQ_BASE_URL: z.string().default('https://api.groq.com/openai/v1'),
+    // Interview prep from GitHub repos (plan.md). Groq only: off unless GROQ_API_KEY (shared with the hint coach)
+    // or INTERVIEW_GROQ_API_KEY is set; INTERVIEW_MODEL=fake is a deterministic stand-in for E2E and local dev.
+    INTERVIEW_GROQ_API_KEY: z.preprocess(emptyToUndef, z.string().optional()),
+    GROQ_TIER: z.enum(['free', 'developer']).default('developer'),
+    INTERVIEW_MODEL: z.string().default('openai/gpt-oss-120b'),
+    INTERVIEW_TRIAGE_MODEL: z.string().default('openai/gpt-oss-20b'),
+    INTERVIEW_CRITIQUE_MODEL: z.string().default('openai/gpt-oss-20b'),
+    INTERVIEW_WRITER_EFFORT: z.preprocess(
+      emptyToUndef,
+      z.enum(['low', 'medium', 'high']).optional(),
+    ), // tier default
+    INTERVIEW_JSON_MODE: z.enum(['auto', 'json_schema', 'json_object']).default('auto'),
+    GITHUB_TOKEN: z.preprocess(emptyToUndef, z.string().optional()),
+    INTERVIEW_CONCURRENCY: z.coerce.number().int().positive().default(1),
+    INTERVIEW_DAILY_BUDGET_USD: z.coerce.number().nonnegative().default(2),
+    INTERVIEW_MAX_REPO_MB: z.coerce.number().int().positive().default(500),
+    // Unset = the GROQ_TIER profile value (interviews/budget.ts); set to override one number.
+    INTERVIEW_DAILY_LIMIT: optionalInt(),
+    INTERVIEW_QUEUE_MAX: optionalInt(),
+    INTERVIEW_MAX_REQUEST_TOKENS: optionalInt(),
+    INTERVIEW_CONTEXT_TOKENS: optionalInt(),
+    INTERVIEW_TPM_BUDGET: optionalInt(),
+    INTERVIEW_DAILY_TOKENS: optionalInt(),
+    INTERVIEW_JOB_TIMEOUT_MS: optionalInt(),
     // Outgoing mail for registration codes (decision.md D-076). Without SMTP_HOST, development logs the
     // message to the console and test writes to a Redis outbox; production refuses to boot.
     SMTP_HOST: z.string().optional(),
@@ -88,6 +117,8 @@ export const envSchema = z
     if (!c.SMTP_HOST)
       fail('SMTP_HOST', 'SMTP_HOST is required in production (registration codes are emailed)');
     if (c.HINT_MODEL === 'fake') fail('HINT_MODEL', 'HINT_MODEL=fake is for tests and dev only');
+    if (c.INTERVIEW_MODEL === 'fake')
+      fail('INTERVIEW_MODEL', 'INTERVIEW_MODEL=fake is for tests and dev only');
     if (!c.CORS_ORIGIN.startsWith('https://'))
       fail('CORS_ORIGIN', 'CORS_ORIGIN must be the public https:// origin of the site');
     if (c.JWT_ACCESS_SECRET === c.JWT_REFRESH_SECRET)

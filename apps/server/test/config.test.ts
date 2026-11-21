@@ -26,6 +26,7 @@ describe('production config', () => {
   it.each([
     ['no SMTP', { SMTP_HOST: undefined }, 'SMTP_HOST'],
     ['the fake hint model', { HINT_MODEL: 'fake' }, 'HINT_MODEL'],
+    ['the fake interview model', { INTERVIEW_MODEL: 'fake' }, 'INTERVIEW_MODEL'],
     ['a non-https origin', { CORS_ORIGIN: 'http://thegrave.example' }, 'CORS_ORIGIN'],
     ['localhost as origin', { CORS_ORIGIN: 'http://localhost:5173' }, 'CORS_ORIGIN'],
     ['identical JWT secrets', { JWT_REFRESH_SECRET: good.JWT_ACCESS_SECRET }, 'JWT_REFRESH_SECRET'],

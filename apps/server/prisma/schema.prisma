@@ -30,6 +30,7 @@ model User {
   matches       MatchPlayer[]
   seenProblems  SeenProblem[]
   projectRuns   ProjectRun[]
+  interviewAnalyses InterviewAnalysis[]
   // Public profile (decision.md D-071)
   bio             String?
   // { github?, linkedin?, x?, website? }: https URLs, validated on write
@@ -333,4 +334,106 @@ model Avatar {
   data      Bytes
   mime      String
   updatedAt DateTime @updatedAt
+}
+
+enum InterviewStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+// UI labels: Queued, Cloning, Reading code, Writing questions, Reviewing questions
+enum InterviewStage {
+  QUEUED
+  FETCHING
+  READING
+  WRITING
+  REVIEWING
+  DONE
+}
+
+enum InterviewLevel {
+  AUTO // only valid as the requested level
+  INTERN
+  JUNIOR
+  MID
+  SENIOR
+}
+
+enum InterviewCategory {
+  ARCHITECTURE
+  DESIGN_TRADEOFF
+  CODE_QUALITY
+  BUG_RISK
+  TESTING
+  PERFORMANCE_SCALING
+  SECURITY
+  DEPENDENCIES
+  DATA_MODEL
+  DEVOPS
+}
+
+// Interview prep from a public GitHub repo (plan.md). One row per request; questions hang off it.
+model InterviewAnalysis {
+  id              String            @id @default(uuid(7)) @db.Uuid
+  userId          String            @db.Uuid
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Canonical, lower-cased for cache keys; display casing comes from GitHub's metadata
+  repoOwner       String
+  repoName        String
+  // Branch from a /tree/<ref> URL; null = default branch
+  ref             String?
+  commitSha       String?
+  requestedLevel  InterviewLevel    @default(AUTO)
+  // Triage's estimate; the level used is requestedLevel unless AUTO
+  apparentLevel   InterviewLevel?
+  status          InterviewStatus   @default(QUEUED)
+  stage           InterviewStage    @default(QUEUED)
+  // { detail: string, waitingUntil: ISO string | null } shown under the active step; paths and counts only.
+  // waitingUntil is set while the job waits for Groq rate-limit capacity (UI countdown)
+  progress        Json?
+  // { displayName, description, languages, stats, summary, focusAreas, truncatedTree }
+  profile         Json?
+  // `${owner}/${repo}@${sha}#${level}#v${PIPELINE_VERSION}`; set once the SHA is known
+  cacheKey        String?
+  // Copied from an earlier analysis with the same cacheKey (no LLM spend)
+  cachedFromId    String?           @db.Uuid
+  // True once the writer stage started: only charged analyses count toward the daily quota
+  charged         Boolean           @default(false)
+  errorCode       String?
+  // Sums over all Groq calls: usage.prompt_tokens, completion_tokens, prompt_tokens_details.cached_tokens
+  inputTokens     Int               @default(0)
+  outputTokens    Int               @default(0)
+  cacheReadTokens Int               @default(0)
+  costMicroUsd    Int               @default(0)
+  // { stageMs: {...}, filesInTree, candidates, packed, shards, llmCalls, rateLimitWaitMs, generated,
+  //   rejected: { reason: count } }
+  metrics         Json?
+  createdAt       DateTime          @default(now())
+  startedAt       DateTime?
+  finishedAt      DateTime?
+
+  questions InterviewQuestion[]
+
+  @@index([userId, createdAt])
+  @@index([cacheKey, status])
+}
+
+model InterviewQuestion {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  analysisId   String            @db.Uuid
+  analysis     InterviewAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  position     Int
+  category     InterviewCategory
+  difficulty   Difficulty        // existing enum: EASY | MEDIUM | HARD
+  question     String
+  whyAsked     String
+  // [{ path, startLine, endLine, snippet }]: snippet is the server's copy of the real lines, never the model's
+  evidence     Json
+  strongAnswer Json              // string[]
+  followUps    Json              // string[]
+  redFlags     Json              // string[]
+
+  @@unique([analysisId, position])
 }
