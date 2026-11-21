@@ -27,7 +27,7 @@ export function ProjectsPage() {
 
         {/* Same matchmaking and rooms as DSA, against their own queue (decision.md D-067). */}
         <div className="mt-8">
-          <Lobby mode="PROGRAMMING" />
+          <Lobby />
           <p className="mt-3 text-xs text-ash-400">
             {inRoom
               ? 'You’re in a private room: leave or close it to queue for ranked.'
