@@ -41,6 +41,7 @@ Every match is executed inside hardened, isolated Docker sandboxes with millisec
 ### 📈 Glicko-2 Rating & Campus Leaderboards
 * **Statistical Rating Engine**: Full Glicko-2 implementation (rating, deviation $RD$, and volatility $\sigma$).
 * **Idle Rating Decay**: Automatic rating deviation expansion over time for inactive accounts to ensure accurate match quality.
+* **Practice Bots**: Twelve labelled bots (rating 800 to 2350) fill in when few players are online, so a lone player is matched after a few seconds instead of waiting. They play both DSA and programming battles under the normal win rules; only the human's rating moves, and bots never appear on leaderboards or in search.
 * **Campus & Global Leaderboards**: Filter rankings globally or restrict views to your university/institution.
 * **Rich Profiles**: Visual rating trajectory charts, head-to-head match history, Win/Loss/Draw statistics, customizable avatars, and player search.
 

@@ -38,6 +38,9 @@ model User {
   avatarUpdatedAt DateTime?
   avatar          Avatar?
   ratingHistory RatingHistory[]
+  // Practice bots (apps/server/src/bots): fixed rating, no login, never ranked or searchable. They fill in
+  // when few players are online so nobody waits long for a match.
+  isBot           Boolean  @default(false)
 
   @@index([ratedGames, rating])
 }

@@ -95,7 +95,7 @@ export async function createVerifiedUser(input: {
 export async function login(input: LoginInput): Promise<IssuedTokens> {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
   const ok = await argon2.verify(user?.passwordHash ?? (await dummyHash), input.password);
-  if (!user || !ok) throw new AuthError(401, INVALID_CREDENTIALS);
+  if (!user || user.isBot || !ok) throw new AuthError(401, INVALID_CREDENTIALS);
   return issueTokens(user, randomUUID());
 }
 

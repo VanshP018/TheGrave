@@ -1,5 +1,6 @@
 import { functionSection, starterCodeFor } from '../judge/signatures.js';
 import { prisma } from '../lib/prisma.js';
+import { seedBots } from './bots.js';
 import { buildTestCases, STARTER_CODE } from './build.js';
 import { problems } from './problems.js';
 import { extraProblems } from './problems-extra.js';
@@ -47,4 +48,6 @@ for (const def of projects) {
   console.log(`project ${def.slug.padEnd(24)} ${data.hiddenTestCount} hidden tests`);
 }
 console.log(`seeded ${projects.length} projects`);
+const bots = await seedBots();
+console.log(`seeded ${bots.length} practice bots (${bots.filter((b) => b.created).length} new)`);
 await prisma.$disconnect();

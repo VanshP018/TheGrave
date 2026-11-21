@@ -40,9 +40,6 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         notice: reason === 'expired' ? 'You were removed from the queue (connection lost).' : null,
       }),
     );
-    s.on('queue:stats', ({ queued, mode }) =>
-      set({ queued: { ...useLobby.getState().queued, [mode]: queued } }),
-    );
     s.on('match:found', ({ matchId, opponent, expiresAt, mode }) =>
       set({ status: 'ready', mode, match: { id: matchId, opponent, expiresAt, accepted: [] } }),
     );

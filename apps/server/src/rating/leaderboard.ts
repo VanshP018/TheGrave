@@ -59,7 +59,7 @@ export class Leaderboard {
       const version = (await this.redis.get(VERSION_KEY)) ?? '0';
       const rows = await prisma.$queryRaw<{ id: string; rating: number }[]>`
         SELECT id, rating FROM "User"
-        WHERE "ratedGames" > 0 AND ${effectiveRdSql} <= ${LEADERBOARD_MAX_RD}`;
+        WHERE "ratedGames" > 0 AND NOT "isBot" AND ${effectiveRdSql} <= ${LEADERBOARD_MAX_RD}`;
       const tmp = `${LB_KEY}:build:${randomUUID()}`;
       for (let i = 0; i < rows.length; i += 1000) {
         await this.redis.zadd(tmp, ...rows.slice(i, i + 1000).flatMap((r) => [r.rating, r.id]));
@@ -102,7 +102,11 @@ export class Leaderboard {
     };
     if (!institution) return empty;
     const people = await prisma.user.findMany({
-      where: { institution: { equals: institution, mode: 'insensitive' }, ratedGames: { gt: 0 } },
+      where: {
+        institution: { equals: institution, mode: 'insensitive' },
+        ratedGames: { gt: 0 },
+        isBot: false,
+      },
       select: {
         id: true,
         username: true,
@@ -196,5 +200,5 @@ export class Leaderboard {
 export async function materialiseRdDecay(): Promise<number> {
   return prisma.$executeRaw`
     UPDATE "User" SET "ratingDev" = ${effectiveRdSql}, "rdUpdatedAt" = now()
-    WHERE "rdUpdatedAt" < now() - interval '1 hour' AND "ratingDev" < 350`;
+    WHERE "rdUpdatedAt" < now() - interval '1 hour' AND "ratingDev" < 350 AND NOT "isBot"`;
 }

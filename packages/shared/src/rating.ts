@@ -48,6 +48,8 @@ export interface ProfileView {
   institution: string | null;
   links: SocialLinks;
   avatarUrl: string | null;
+  /** A practice bot: shown with a BOT tag, and has no login. */
+  bot?: boolean;
   /** Highest rating reached, from the history. */
   peakRating: number;
   joinedAt: number;
@@ -70,7 +72,7 @@ export interface MatchHistoryItem {
   outcome: GameOutcome;
   delta: number;
   ratingAfter: number;
-  opponent: { username: string; rating: number };
+  opponent: { username: string; rating: number; bot?: boolean };
   endReason: MatchEndReason;
   problem: { title: string; difficulty: Difficulty };
 }

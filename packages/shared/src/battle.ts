@@ -22,6 +22,8 @@ export interface PlayerProgress {
   username: string;
   avatarUrl: string | null;
   rating: number;
+  /** A practice bot (shown with a BOT tag). */
+  bot?: boolean;
   attempts: number;
   /** Judging still in progress. */
   pending: number;

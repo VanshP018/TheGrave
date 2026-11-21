@@ -8,7 +8,11 @@ export type BattleJob =
   | { type: 'start'; matchId: string }
   | { type: 'end'; matchId: string; attempt: number }
   | { type: 'judged'; matchId: string; submissionId: string }
-  | { type: 'forfeit'; matchId: string; userId: string; token: string };
+  | { type: 'forfeit'; matchId: string; userId: string; token: string }
+  /** A practice bot's scripted submission (see src/bots/plan.ts). */
+  | { type: 'bot'; matchId: string; botId: string; seq: number; passed: number; total: number }
+  /** A practice bot answering a draw offer. */
+  | { type: 'botdraw'; matchId: string; botId: string };
 
 export const battleQueue = new Queue<BattleJob>(BATTLE_QUEUE, {
   connection: redis,
@@ -29,6 +33,10 @@ export function scheduleBattleJob(job: BattleJob, delayMs = 0) {
         ? `end_${job.matchId}_${job.attempt}`
         : job.type === 'judged'
           ? `judged_${job.submissionId}`
-          : `forfeit_${job.matchId}_${job.userId}_${job.token}`;
+          : job.type === 'bot'
+            ? `bot_${job.matchId}_${job.botId}_${job.seq}`
+            : job.type === 'botdraw'
+              ? `botdraw_${job.matchId}_${Date.now()}`
+              : `forfeit_${job.matchId}_${job.userId}_${job.token}`;
   return battleQueue.add(job.type, job, { jobId: id, delay: Math.max(0, delayMs) });
 }

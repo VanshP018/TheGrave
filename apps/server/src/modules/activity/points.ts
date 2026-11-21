@@ -63,7 +63,7 @@ const ranked = (institution: string | null) => Prisma.sql`
     SELECT t.uid, t.points, t.solved, t.dsa, t.programming, u.username, u.institution,
            RANK() OVER (ORDER BY t.points DESC)::int AS rank
     FROM totals t
-    JOIN "User" u ON u.id = t.uid
+    JOIN "User" u ON u.id = t.uid AND NOT u."isBot"
     ${institution === null ? Prisma.empty : Prisma.sql`WHERE lower(u.institution) = lower(${institution})`}
   )`;
 

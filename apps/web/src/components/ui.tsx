@@ -13,6 +13,18 @@ export const btnPrimary =
 export const btnSecondary =
   'inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-sm border border-ash-600 px-4 text-sm text-ink transition-colors duration-200 hover:border-azure/50 hover:bg-ash-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-ash-600 disabled:hover:bg-transparent';
 
+/** Marks a practice bot wherever a player's name is shown, so nobody mistakes one for a person. */
+export function BotBadge({ className = '' }: { className?: string }) {
+  return (
+    <span
+      title="A practice bot. It plays when few players are online."
+      className={`inline-flex shrink-0 items-center rounded-full bg-white/[0.1] px-1.5 py-px align-middle text-[9px] font-semibold uppercase leading-4 tracking-widest text-ash-300 ${className}`}
+    >
+      Bot
+    </span>
+  );
+}
+
 export const card = 'rounded-xl border border-ash-700 bg-ash-900';
 
 export const input =

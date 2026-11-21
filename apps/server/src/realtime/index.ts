@@ -92,6 +92,8 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
     joinRoom: (userId, room) => io.in(userRoom(userId)).socketsJoin(room),
     isConnected: async (userId) => (await io.in(userRoom(userId)).fetchSockets()).length > 0,
   };
+  // Practice bots fill in for quiet hours; off in tests unless a test turns them on.
+  const botsEnabled = config.BOTS_ENABLED ?? config.NODE_ENV !== 'test';
   // One queue per mode (decision.md D-067); both share the per-user state, so a player is in at most one.
   const makeMatchmaker = (mode: MatchMode): Matchmaker => {
     const instance: Matchmaker = new Matchmaker(
@@ -104,7 +106,7 @@ export function attachRealtime(app: FastifyInstance, opts: RealtimeOptions = {})
           else await battle.createMatch(m);
         },
       },
-      { ...opts.matchmaker, mode },
+      { botAfterMs: botsEnabled ? config.BOT_MATCH_AFTER_MS : null, ...opts.matchmaker, mode },
     );
     return instance;
   };

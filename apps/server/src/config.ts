@@ -27,6 +27,13 @@ export const envSchema = z
     BATTLE_DURATION_MS: z.coerce.number().int().positive().optional(),
     BATTLE_RECONNECT_GRACE_MS: z.coerce.number().int().positive().default(30_000),
     BATTLE_SUBMIT_COOLDOWN_MS: z.coerce.number().int().nonnegative().default(5000),
+    // Practice bots fill in when few players are online (a player waiting this long with no human opponent
+    // is matched with the roster bot closest in rating). On by default, off in tests unless set explicitly.
+    BOTS_ENABLED: z
+      .enum(['true', 'false', '1', '0'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true' || v === '1')),
+    BOT_MATCH_AFTER_MS: z.coerce.number().int().nonnegative().default(6000),
     // AI hint bot for practice challenges (decision.md D-075). Off unless a key is set; HINT_MODEL=fake is a
     // deterministic stand-in for E2E and local dev.
     ANTHROPIC_API_KEY: z.string().optional(),
@@ -35,7 +42,11 @@ export const envSchema = z
     // (Anthropic, then DeepSeek, then Groq).
     // Characters of the player's files sent with each question. Lower it for providers with small token limits
     // (Groq's free tier allows 8000 tokens/minute).
-    HINT_WORKSPACE_CAP: z.coerce.number().int().positive().default(120 * 1024),
+    HINT_WORKSPACE_CAP: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(120 * 1024),
     HINT_PROVIDER: z.preprocess(
       (v) => (v === '' ? undefined : v), // compose passes unset values as empty strings
       z.enum(['anthropic', 'deepseek', 'groq']).optional(),

@@ -148,6 +148,7 @@ Then fill in the rest:
 | `SMTP_USER` / `SMTP_PASS` | your **new** provider credentials (Mailjet: API key / secret key) |
 | `MAIL_FROM` | `"TheGrave <no-reply@yourdomain.example>"`, a verified sender |
 | `ANTHROPIC_API_KEY` | optional, enables the hint coach |
+| `BOTS_ENABLED`, `BOT_MATCH_AFTER_MS` | optional. Practice bots fill in when few players are online: a player who has waited `BOT_MATCH_AFTER_MS` (default 6000, plus up to 3 s of jitter) with no human opponent is matched with the bot closest in rating. On by default; set `BOTS_ENABLED=false` to turn them off. The bot accounts are created by the seed (`db:seed:prod`) |
 | `DEEPSEEK_API_KEY`, `GROQ_API_KEY` | optional alternatives for the hint coach; with several keys set, `HINT_PROVIDER` (`anthropic`, `deepseek` or `groq`) picks one, else the first set wins in that order |
 
 Leave `SITE_ADDRESS` commented out. `.env.production` is ignored by git; never commit it.

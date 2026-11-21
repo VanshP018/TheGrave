@@ -101,13 +101,14 @@ end
 local expired = {}
 for _, id in ipairs(redis.call('ZRANGEBYSCORE', D, '-inf', now)) do
   redis.call('ZREM', D, id)
-  local h = redis.call('HMGET', readyKey(id), 'a', 'b', 'ra', 'rb', 'ja', 'jb', 'acc_a', 'acc_b')
+  local h = redis.call('HMGET', readyKey(id), 'a', 'b', 'ra', 'rb', 'ja', 'jb', 'acc_a', 'acc_b', 'bot')
   redis.call('DEL', readyKey(id))
   if h[1] then
-    local players = { {h[1], h[3], h[5], h[7]}, {h[2], h[4], h[6], h[8]} }
+    -- h[9] says which side is a practice bot ('a' | 'b'); a bot is freed, never queued.
+    local players = { {h[1], h[3], h[5], h[7], h[9] == 'a'}, {h[2], h[4], h[6], h[8], h[9] == 'b'} }
     for _, p in ipairs(players) do
       if redis.call('GET', stateKey(p[1])) == 'ready:' .. id then
-        if p[4] == '1' then enqueue(p[1], p[2], p[3], now + leaseMs) else redis.call('DEL', stateKey(p[1])) end
+        if p[4] == '1' and not p[5] then enqueue(p[1], p[2], p[3], now + leaseMs) else redis.call('DEL', stateKey(p[1])) end
       end
     end
     expired[#expired + 1] = {id, h[1], h[7], h[2], h[8]}
@@ -163,6 +164,29 @@ end
 return {purged, expired, matched, redis.call('ZCARD', Q)}
 `;
 
+/**
+ * Pairs a waiting human with a practice bot, as a ready check the bot has already accepted.
+ * ARGV: userId, botId, botRating, readyMs, stateTtlMs → {id, humanRating, deadline} | {} (not queued, or bot busy)
+ */
+const PAIR_BOT = `
+local u, bot, botRating, readyMs, stateTtl = ARGV[1], ARGV[2], ARGV[3], tonumber(ARGV[4]), tonumber(ARGV[5])
+local rating = redis.call('ZSCORE', Q, u)
+local joined = redis.call('ZSCORE', J, u)
+if not rating or not joined or redis.call('GET', stateKey(u)) ~= QUEUED then return {} end
+if redis.call('GET', stateKey(bot)) then return {} end
+local now = nowMs()
+local deadline = now + readyMs
+dequeue(u)
+local id = tostring(redis.call('INCR', SEQ))
+redis.call('HSET', readyKey(id), 'a', u, 'b', bot, 'ra', rating, 'rb', botRating,
+  'ja', joined, 'jb', tostring(now), 'acc_a', '0', 'acc_b', '1', 'bot', 'b')
+redis.call('PEXPIRE', readyKey(id), readyMs + stateTtl)
+redis.call('ZADD', D, deadline, id)
+redis.call('SET', stateKey(u), 'ready:' .. id, 'PX', readyMs + stateTtl)
+redis.call('SET', stateKey(bot), 'ready:' .. id, 'PX', readyMs + stateTtl)
+return {id, rating, tostring(deadline)}
+`;
+
 /** ARGV: readyId, userId, matchStateTtlMs → {'waiting'} | {'confirmed', a, b, ra, rb} | {'gone'} */
 const ACCEPT = `
 local id, u, matchTtl = ARGV[1], ARGV[2], tonumber(ARGV[3])
@@ -186,18 +210,22 @@ return {'waiting', h[1], h[2]}
 /** ARGV: readyId, userId, leaseMs → {'declined', otherUserId, requeued(0|1)} | {'gone'} */
 const DECLINE = `
 local id, u, leaseMs = ARGV[1], ARGV[2], tonumber(ARGV[3])
-local h = redis.call('HMGET', readyKey(id), 'a', 'b', 'ra', 'rb', 'ja', 'jb')
-local other, oRating, oJoined
-if h[1] == u then other, oRating, oJoined = h[2], h[4], h[6]
-elseif h[2] == u then other, oRating, oJoined = h[1], h[3], h[5]
+local h = redis.call('HMGET', readyKey(id), 'a', 'b', 'ra', 'rb', 'ja', 'jb', 'bot')
+local other, oRating, oJoined, otherIsBot
+if h[1] == u then other, oRating, oJoined, otherIsBot = h[2], h[4], h[6], h[7] == 'b'
+elseif h[2] == u then other, oRating, oJoined, otherIsBot = h[1], h[3], h[5], h[7] == 'a'
 else return {'gone'} end
 redis.call('DEL', readyKey(id))
 redis.call('ZREM', D, id)
 if redis.call('GET', stateKey(u)) == 'ready:' .. id then redis.call('DEL', stateKey(u)) end
 local requeued = 0
 if redis.call('GET', stateKey(other)) == 'ready:' .. id then
-  enqueue(other, oRating, oJoined, nowMs() + leaseMs)
-  requeued = 1
+  if otherIsBot then
+    redis.call('DEL', stateKey(other))
+  else
+    enqueue(other, oRating, oJoined, nowMs() + leaseMs)
+    requeued = 1
+  end
 end
 return {'declined', other, requeued}
 `;
@@ -263,6 +291,7 @@ export const scripts = {
   join: script(JOIN),
   leave: script(LEAVE),
   tick: script(TICK),
+  pairBot: script(PAIR_BOT),
   accept: script(ACCEPT),
   decline: script(DECLINE),
   release: script(RELEASE),

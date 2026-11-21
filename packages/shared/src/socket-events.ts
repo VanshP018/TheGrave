@@ -6,6 +6,8 @@ export interface Opponent {
   id: string;
   username: string;
   rating: number;
+  /** A practice bot, which fills in when few players are online. Always shown as such. */
+  bot?: boolean;
 }
 
 export type AckError =
@@ -29,8 +31,6 @@ export interface ServerToClientEvents {
   /** Sent to every socket of the user, so all tabs stay in sync. */
   'queue:joined': (payload: { joinedAt: number; mode: MatchMode }) => void;
   'queue:left': (payload: { reason: QueueLeftReason; mode: MatchMode }) => void;
-  /** Per queue: each mode has its own (decision.md D-067). */
-  'queue:stats': (payload: { queued: number; mode: MatchMode }) => void;
   /** Ready check: both players must `match:accept` before `expiresAt` (server epoch ms). */
   'match:found': (payload: {
     matchId: string;

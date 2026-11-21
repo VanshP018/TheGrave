@@ -31,10 +31,14 @@ export async function problemRoutes(app: FastifyInstance) {
         select: { id: true, slug: true, title: true, difficulty: true, tags: true },
         orderBy: [{ difficulty: 'asc' }, { title: 'asc' }],
       }),
-      prisma.submission.groupBy({ by: ['problemId'], where: done, _count: { _all: true } }),
       prisma.submission.groupBy({
         by: ['problemId'],
-        where: { ...done, verdict: 'ACCEPTED' },
+        where: { ...done, user: { isBot: false } },
+        _count: { _all: true },
+      }),
+      prisma.submission.groupBy({
+        by: ['problemId'],
+        where: { ...done, verdict: 'ACCEPTED', user: { isBot: false } },
         _count: { _all: true },
       }),
       prisma.submission.groupBy({

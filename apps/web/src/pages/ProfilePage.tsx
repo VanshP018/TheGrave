@@ -13,7 +13,7 @@ import { CameraIcon, GraduationCapIcon, PencilIcon } from '../components/play/ic
 import { ActivitySection } from '../components/profile/Activity';
 import { ProfileEditor, SOCIAL } from '../components/profile/ProfileEditor';
 import { RatingChart } from '../components/RatingChart';
-import { btnSecondary, focusRing } from '../components/ui';
+import { BotBadge, btnSecondary, focusRing } from '../components/ui';
 import { api, ApiRequestError } from '../lib/api';
 import { toAvatarDataUrl } from '../lib/image';
 import { useAuth } from '../stores/auth';
@@ -234,6 +234,7 @@ export function ProfilePage() {
             </p>
             <h1 className="mt-3 truncate text-[clamp(2.5rem,7vw,5rem)] font-bold leading-[0.95] tracking-[-0.05em] text-ink">
               {p.username}
+              {p.bot && <BotBadge className="ml-4 !text-xs !px-3 !py-0.5 align-middle" />}
             </h1>
             {p.institution && (
               <p className="mt-3 flex items-center justify-center gap-1.5 text-sm text-ash-300 lg:justify-start">
@@ -408,6 +409,7 @@ export function ProfilePage() {
                   <Link to={`/u/${m.opponent.username}`} className="hover:text-azure">
                     {m.opponent.username}
                   </Link>{' '}
+                  {m.opponent.bot && <BotBadge className="mr-1" />}
                   <span className="text-ash-400">({m.opponent.rating})</span>
                 </span>
                 <span className="hidden min-w-0 truncate text-ash-400 md:block md:w-56">

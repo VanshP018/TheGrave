@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { MatchMode, Opponent, QueueLeftReason, ServerToClientEvents } from '@thegrave/shared';
 import type { Redis } from 'ioredis';
+import { pickBotFor } from '../bots/plan.js';
 import { prisma } from '../lib/prisma.js';
 import { keysFor, queuedState, scripts } from './scripts.js';
 
@@ -19,6 +20,14 @@ export interface MatchmakerOptions {
   maxPairsPerTick: number;
   /** Safety-net TTL on `user:{id}:state = match:{id}` in case a match is never released. */
   matchStateTtlMs: number;
+  /**
+   * Practice bots: a player who has waited this long (plus up to a few seconds of jitter, so it isn't
+   * clockwork) with no human opponent is paired with the roster bot closest in rating. `null` turns bots off.
+   */
+  botAfterMs: number | null;
+  /** Up to this much extra waiting before a bot joins, different for every queue entry. */
+  botJitterMs: number;
+  maxBotPairsPerTick: number;
 }
 
 export const DEFAULT_MATCHMAKER_OPTIONS: MatchmakerOptions = {
@@ -32,6 +41,17 @@ export const DEFAULT_MATCHMAKER_OPTIONS: MatchmakerOptions = {
   tickMs: 1000,
   maxPairsPerTick: 1000,
   matchStateTtlMs: 2 * 60 * 60 * 1000,
+  botAfterMs: null,
+  botJitterMs: 3000,
+  maxBotPairsPerTick: 20,
+};
+
+/** Stable for one queue entry: spreads when bots join, so it is not a visible fixed delay. */
+const jitterFor = (userId: string, joinedAt: number, maxMs: number) => {
+  if (maxMs <= 0) return 0;
+  let h = 2166136261;
+  for (const c of `${userId}:${joinedAt}`) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return (h >>> 0) % maxMs;
 };
 
 type Events = ServerToClientEvents;
@@ -82,6 +102,10 @@ export class Matchmaker {
 
   private readonly keys: string[];
   private readonly lockKey: string;
+  private botCache: {
+    at: number;
+    bots: { id: string; username: string; rating: number }[];
+  } | null = null;
   get mode(): MatchMode {
     return this.opts.mode;
   }
@@ -291,8 +315,81 @@ export class Matchmaker {
       }
     }
 
-    this.notify.broadcast('queue:stats', { queued, mode: this.mode });
-    return { purged, expired: expired.length, paired: pairs.length, queued };
+    const botPairs = await this.pairWithBots();
+    return { purged, expired: expired.length, paired: pairs.length + botPairs, queued };
+  }
+
+  /** The roster, refreshed once a minute: the bots change only when the seed runs. */
+  private async loadBots() {
+    if (this.botCache && Date.now() - this.botCache.at < 60_000) return this.botCache.bots;
+    const bots = await prisma.user.findMany({
+      where: { isBot: true },
+      select: { id: true, username: true, rating: true },
+    });
+    this.botCache = { at: Date.now(), bots };
+    return bots;
+  }
+
+  /**
+   * Gives a bot opponent to anyone who has waited long enough without finding a human. It is a normal
+   * ready check in which the bot has already accepted, so the player sees the same "match found" step.
+   * Humans are always matched first: the tick above has already paired everyone it could.
+   */
+  private async pairWithBots(): Promise<number> {
+    const after = this.opts.botAfterMs;
+    if (after === null) return 0;
+    const [sec, micro] = await this.redis.time();
+    const now = Number(sec) * 1000 + Math.floor(Number(micro) / 1000);
+    const waiting = await this.redis.zrangebyscore(
+      this.keys[1]!,
+      '-inf',
+      now - after,
+      'WITHSCORES',
+      'LIMIT',
+      0,
+      this.opts.maxBotPairsPerTick,
+    );
+    let paired = 0;
+    for (let i = 0; i < waiting.length; i += 2) {
+      const userId = waiting[i]!;
+      const joinedAt = Number(waiting[i + 1]);
+      if (now - joinedAt < after + jitterFor(userId, joinedAt, this.opts.botJitterMs)) continue;
+      const rating = await this.redis.zscore(this.keys[0]!, userId);
+      if (rating === null) continue;
+      const bots = await this.loadBots();
+      // The closest bot first; if it is busy in another match, the next closest.
+      const tried = new Set<string>();
+      for (let n = 0; n < 3; n++) {
+        const bot = pickBotFor(
+          bots.filter((b) => !tried.has(b.id)),
+          Number(rating),
+          Math.random,
+        );
+        if (!bot) break;
+        tried.add(bot.id);
+        const res = await scripts.pairBot.run<string[]>(
+          this.redis,
+          [userId, bot.id, bot.rating, this.opts.readyTimeoutMs, this.opts.readyTimeoutMs + 60_000],
+          this.keys,
+        );
+        if (!res.length) continue;
+        const [matchId, , deadline] = res as [string, string, string];
+        this.notify.toUser(userId, 'match:found', {
+          matchId,
+          opponent: {
+            id: bot.id,
+            username: bot.username,
+            rating: Math.round(bot.rating),
+            bot: true,
+          },
+          expiresAt: Number(deadline),
+          mode: this.mode,
+        });
+        paired++;
+        break;
+      }
+    }
+    return paired;
   }
 
   /** Renews queue leases for every user connected to this node. `XX` makes it a no-op for users not queued. */
@@ -308,13 +405,18 @@ export class Matchmaker {
     const ids = [...new Set(entries.map(([id]) => id))];
     const users = await prisma.user.findMany({
       where: { id: { in: ids } },
-      select: { id: true, username: true },
+      select: { id: true, username: true, isBot: true },
     });
-    const names = new Map(users.map((u) => [u.id, u.username]));
+    const byId = new Map(users.map((u) => [u.id, u]));
     return new Map(
       entries.map(([id, rating]) => [
         id,
-        { id, username: names.get(id) ?? 'unknown', rating: Math.round(rating) },
+        {
+          id,
+          username: byId.get(id)?.username ?? 'unknown',
+          rating: Math.round(rating),
+          ...(byId.get(id)?.isBot ? { bot: true } : {}),
+        },
       ]),
     );
   }

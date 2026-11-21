@@ -10,6 +10,8 @@ import {
   type PlayerProgress,
   type ServerToClientEvents,
 } from '@thegrave/shared';
+import { BOTS } from '../bots/roster.js';
+import { planBot } from '../bots/plan.js';
 import { enqueueSubmission } from '../judge/queue.js';
 import { avatarUrl } from '../lib/avatar.js';
 import { prisma } from '../lib/prisma.js';
@@ -105,12 +107,14 @@ export class BattleService {
     const ids = confirmed.players.map((p) => p.id);
     const users = await prisma.user.findMany({
       where: { id: { in: ids } },
-      select: { id: true, rating: true },
+      select: { id: true, username: true, rating: true, isBot: true },
     });
+    // Practice bots take part like anyone else but never "see" problems or count towards what is fresh.
+    const humanIds = users.filter((u) => !u.isBot).map((u) => u.id);
     const avg = users.reduce((s, u) => s + u.rating, 0) / users.length;
     const target = opts.difficulty ?? difficultyFor(avg);
     // Programming battles get a codebase instead of a problem (decision.md D-067).
-    const problem = mode === 'DSA' ? await pickProblem(ids, target) : null;
+    const problem = mode === 'DSA' ? await pickProblem(humanIds, target) : null;
     const project = mode === 'PROGRAMMING' ? await pickProject(target) : null;
     const difficulty = (problem ?? project)!.difficulty;
 
@@ -130,7 +134,7 @@ export class BattleService {
       });
       if (problem)
         await tx.seenProblem.createMany({
-          data: ids.map((userId) => ({ userId, problemId: problem.id })),
+          data: humanIds.map((userId) => ({ userId, problemId: problem.id })),
           skipDuplicates: true,
         });
       return m;
@@ -143,7 +147,123 @@ export class BattleService {
       this.notify.joinRoom(id, matchRoom(match.id));
       this.notify.toUser(id, 'battle:created', { matchId: match.id, startsAt, endsAt });
     }
+    await this.scheduleBots(match.id, { problem, project }, difficulty, users);
     return match.id;
+  }
+
+  /**
+   * Scripts every practice bot in the match as a few timed jobs (see planBot). A bot plays no live part:
+   * its submissions simply arrive, are recorded like any other and go through the same win rules.
+   */
+  private async scheduleBots(
+    matchId: string,
+    subject: { problem: { id: string } | null; project: { id: string } | null },
+    difficulty: Difficulty,
+    users: { id: string; username: string; rating: number; isBot: boolean }[],
+  ) {
+    const bots = users.filter((u) => u.isBot);
+    if (!bots.length) return;
+    const totalTests = subject.problem
+      ? await prisma.testCase.count({ where: { problemId: subject.problem.id } })
+      : (
+          await prisma.project.findUniqueOrThrow({
+            where: { id: subject.project!.id },
+            select: { hiddenTestCount: true },
+          })
+        ).hiddenTestCount;
+    for (const bot of bots) {
+      const persona = BOTS.find((b) => b.username === bot.username);
+      const plan = planBot({
+        bot: {
+          rating: bot.rating,
+          pace: persona?.pace ?? 1,
+          sloppiness: persona?.sloppiness ?? 0.3,
+        },
+        difficulty,
+        durationMs: this.opts.durationMs[difficulty],
+        totalTests,
+        rng: Math.random,
+      });
+      for (const [seq, a] of plan.entries())
+        await scheduleBattleJob(
+          { type: 'bot', matchId, botId: bot.id, seq, passed: a.passed, total: a.total },
+          this.opts.countdownMs + a.atMs,
+        );
+    }
+  }
+
+  /** One scripted bot submission: recorded as already judged, then run through the normal win rules. */
+  private async botAttempt(job: Extract<BattleJob, { type: 'bot' }>) {
+    const m = await prisma.match.findUnique({
+      where: { id: job.matchId },
+      include: { players: { select: { userId: true } } },
+    });
+    const now = Date.now();
+    if (
+      !m ||
+      !LIVE.includes(m.status as (typeof LIVE)[number]) ||
+      now < m.startsAt.getTime() ||
+      now >= m.endsAt.getTime() ||
+      !m.players.some((p) => p.userId === job.botId)
+    )
+      return;
+    const marker = `bot:${job.seq}`; // makes a retried job a no-op instead of a duplicate attempt
+    const full = job.passed >= job.total;
+    let id: string;
+    if (m.mode === 'PROGRAMMING') {
+      const existing = await prisma.projectRun.findFirst({
+        where: { matchId: m.id, userId: job.botId, command: marker },
+        select: { id: true },
+      });
+      if (existing) return;
+      id = (
+        await prisma.projectRun.create({
+          data: {
+            userId: job.botId,
+            matchId: m.id,
+            projectId: m.projectId!,
+            kind: 'SUBMIT',
+            command: marker,
+            files: {},
+            status: 'DONE',
+            exitCode: full ? 0 : 1,
+            passed: job.passed,
+            total: job.total,
+            finishedAt: new Date(),
+          },
+        })
+      ).id;
+    } else {
+      const existing = await prisma.submission.findFirst({
+        where: { matchId: m.id, userId: job.botId, code: marker },
+        select: { id: true },
+      });
+      if (existing) return;
+      id = (
+        await prisma.submission.create({
+          data: {
+            userId: job.botId,
+            matchId: m.id,
+            problemId: m.problemId!,
+            kind: 'SUBMIT',
+            language: 'python',
+            code: marker,
+            status: 'DONE',
+            verdict: full ? 'ACCEPTED' : 'WRONG_ANSWER',
+            testsPassed: job.passed,
+            testsTotal: job.total,
+            maxTimeMs: 20 + Math.floor(Math.random() * 200),
+            finishedAt: new Date(),
+          },
+        })
+      ).id;
+    }
+    await this.judged(job.matchId, id);
+  }
+
+  /** A bot never agrees to a draw: it answers a few seconds later, so the offer doesn't just hang. */
+  private async botDraw(job: Extract<BattleJob, { type: 'botdraw' }>) {
+    await this.draw(job.matchId, job.botId, 'decline').catch(() => {});
   }
 
   async handle(job: BattleJob): Promise<void> {
@@ -156,6 +276,10 @@ export class BattleService {
         return this.judged(job.matchId, job.submissionId);
       case 'forfeit':
         return this.forfeit(job.matchId, job.userId, job.token);
+      case 'bot':
+        return this.botAttempt(job);
+      case 'botdraw':
+        return this.botDraw(job);
     }
   }
 
@@ -269,9 +393,14 @@ export class BattleService {
         where: { id: matchId },
         select: { rated: true },
       });
+      const bots = new Set(
+        (
+          await tx.user.findMany({ where: { id: { in: ids }, isBot: true }, select: { id: true } })
+        ).map((u) => u.id),
+      );
       const changes =
         result.status === 'FINISHED' && rated
-          ? await applyMatchRating(tx, matchId, ids, result.winnerId)
+          ? await applyMatchRating(tx, matchId, ids, result.winnerId, undefined, bots)
           : [];
       return { ids, changes };
     });
@@ -376,6 +505,15 @@ export class BattleService {
       if (!(await redis.set(key, userId, 'PX', DRAW_OFFER_TTL_MS, 'NX')))
         throw new BattleError(409, 'A draw offer is already open');
       this.notify.toRoom(room, 'battle:draw', { matchId, offeredBy: userId });
+      const rival = await prisma.user.findUnique({
+        where: { id: opponent },
+        select: { isBot: true },
+      });
+      if (rival?.isBot)
+        await scheduleBattleJob(
+          { type: 'botdraw', matchId, botId: opponent },
+          2000 + Math.floor(Math.random() * 2500),
+        );
       return;
     }
     if (action === 'withdraw') {
@@ -526,7 +664,7 @@ export class BattleService {
     const [player, subs, away] = await Promise.all([
       prisma.matchPlayer.findUniqueOrThrow({
         where: { matchId_userId: { matchId, userId } },
-        include: { user: { select: { username: true, avatarUpdatedAt: true } } },
+        include: { user: { select: { username: true, avatarUpdatedAt: true, isBot: true } } },
       }),
       prisma.match
         .findUniqueOrThrow({
@@ -541,6 +679,7 @@ export class BattleService {
       username: player.user.username,
       avatarUrl: avatarUrl(player.user),
       rating: Math.round(player.ratingBefore),
+      ...(player.user.isBot ? { bot: true } : {}),
       attempts: subs.length,
       pending: subs.filter((s) => s.status === 'QUEUED' || s.status === 'RUNNING').length,
       bestPassed: subs.reduce((m, s) => Math.max(m, s.testsPassed ?? 0), 0),

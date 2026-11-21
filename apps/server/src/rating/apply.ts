@@ -35,6 +35,8 @@ export async function applyMatchRating(
   players: [string, string],
   winnerId: string | null,
   now = new Date(),
+  /** Practice bots in this match: their rating is the yardstick and never moves, so they are not updated. */
+  fixed: ReadonlySet<string> = new Set(),
 ): Promise<AppliedChange[]> {
   const gate = await tx.match.updateMany({
     where: { id: matchId, status: 'FINISHED', ratedAt: null },
@@ -54,7 +56,12 @@ export async function applyMatchRating(
       const u = byId.get(id)!;
       return [
         id,
-        { rating: u.rating, rd: effectiveRd(u, now.getTime()), volatility: u.volatility },
+        {
+          rating: u.rating,
+          // A practice bot is a fixed yardstick, so its RD does not grow while it is idle.
+          rd: fixed.has(id) ? u.ratingDev : effectiveRd(u, now.getTime()),
+          volatility: u.volatility,
+        },
       ];
     }),
   );
@@ -66,6 +73,7 @@ export async function applyMatchRating(
     const score = winnerId === null ? 0.5 : winnerId === me ? 1 : 0;
     // periodFraction 0: idle time is already in `before.rd` via effectiveRd (D-047).
     const after = rate(before, [{ opponent, score }], { periodFraction: 0 });
+    if (fixed.has(me)) continue;
 
     await tx.user.update({
       where: { id: me },

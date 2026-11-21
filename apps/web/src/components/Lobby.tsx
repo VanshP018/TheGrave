@@ -9,7 +9,7 @@ import { useRoom } from '../stores/room';
 import { LANGUAGE_LABEL } from './battle/ProblemPanel';
 import { ChevronIcon } from './battle/icons';
 import { BoltIcon } from './play/icons';
-import { btnPrimary, btnSecondary, focusRing } from './ui';
+import { BotBadge, btnPrimary, btnSecondary, focusRing } from './ui';
 
 const emitAck = <T extends object>(fn: (ack: (r: Ack<T>) => void) => void) =>
   new Promise<Ack<T>>((resolve) => fn(resolve));
@@ -43,7 +43,6 @@ export function Lobby({
   const elsewhere = lobby.status !== 'idle' && lobby.status !== 'confirmed' && lobby.mode !== mode;
   const status = elsewhere ? 'idle' : lobby.status;
   const match = elsewhere ? null : lobby.match;
-  const queued = lobby.queued[mode];
   const me = useAuth((s) => s.user?.id);
   const inRoom = useRoom((s) => !!s.room);
   useNow();
@@ -77,7 +76,7 @@ export function Lobby({
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_40%_120%_at_100%_50%,rgb(92_184_255/0.10),transparent_70%)]"
       />
       <div className="relative flex flex-col gap-5 p-5 md:flex-row md:items-center md:gap-8 md:px-6">
-        <div className="grid flex-1 grid-cols-2 gap-5 sm:grid-cols-4">
+        <div className="grid flex-1 grid-cols-2 gap-5 sm:grid-cols-3">
           <Field label="Mode">
             <span className="inline-flex items-center gap-1.5">
               <BoltIcon className="h-3.5 w-3.5 text-azure" />
@@ -115,9 +114,6 @@ export function Lobby({
               />
               {connected ? 'Connected' : 'Connecting…'}
             </span>
-          </Field>
-          <Field label="In queue">
-            <span className="font-mono tabular-nums">{queued}</span>
           </Field>
         </div>
 
@@ -164,6 +160,7 @@ export function Lobby({
           <div className="flex-1">
             <p className="text-lg text-ink">
               Match found: <span className="font-semibold">{match.opponent.username}</span>{' '}
+              {match.opponent.bot && <BotBadge className="mr-1" />}
               <span className="font-mono text-azure">({match.opponent.rating})</span>
             </p>
             <p className="mt-0.5 text-sm text-ash-300">

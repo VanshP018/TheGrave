@@ -90,7 +90,7 @@ export async function userRoutes(
     const term = q.trim();
     if (!term) return [];
     const users = await prisma.user.findMany({
-      where: { username: { startsWith: term, mode: 'insensitive' } },
+      where: { username: { startsWith: term, mode: 'insensitive' }, isBot: false },
       orderBy: [{ rating: 'desc' }, { username: 'asc' }],
       take: 8,
       select: { username: true, rating: true, avatarUpdatedAt: true },
@@ -127,6 +127,7 @@ export async function userRoutes(
       institution: user.institution,
       links: (user.links as SocialLinks | null) ?? {},
       avatarUrl: avatarUrl(user),
+      ...(user.isBot ? { bot: true } : {}),
       peakRating: Math.round(
         Math.max(DEFAULT_RATING, user.rating, ...ordered.map((p) => p.ratingAfter)),
       ),
@@ -197,9 +198,9 @@ export async function userRoutes(
     const page = rows.slice(0, limit);
     const opponents = await prisma.user.findMany({
       where: { id: { in: page.map((r) => r.opponentId) } },
-      select: { id: true, username: true },
+      select: { id: true, username: true, isBot: true },
     });
-    const names = new Map(opponents.map((o) => [o.id, o.username]));
+    const names = new Map(opponents.map((o) => [o.id, o]));
     const items: MatchHistoryItem[] = page.map((r) => ({
       matchId: r.matchId,
       at: r.createdAt.getTime(),
@@ -207,8 +208,9 @@ export async function userRoutes(
       delta: Math.round(r.ratingAfter) - Math.round(r.ratingBefore),
       ratingAfter: Math.round(r.ratingAfter),
       opponent: {
-        username: names.get(r.opponentId) ?? 'deleted',
+        username: names.get(r.opponentId)?.username ?? 'deleted',
         rating: Math.round(r.opponentRating),
+        ...(names.get(r.opponentId)?.isBot ? { bot: true } : {}),
       },
       endReason: r.match.endReason!,
       problem: (r.match.problem ?? r.match.project)!,
